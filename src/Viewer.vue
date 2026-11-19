@@ -35,11 +35,11 @@ import { loadState } from '@nextcloud/initial-state'
 import { isStale } from './utils/stale.js'
 
 export default {
-	name: 'WepwawetViewer',
+	name: 'HereaboutsViewer',
 
 	data() {
 		return {
-			state: loadState('wepwawet', 'wepwawet-viewer-state'),
+			state: loadState('hereabouts', 'hereabouts-viewer-state'),
 			map: null,
 			marker: null,
 			markerEl: null,

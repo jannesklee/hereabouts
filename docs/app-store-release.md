@@ -15,29 +15,29 @@
 ```bash
 mkdir -p ~/.nextcloud/certificates/
 cd ~/.nextcloud/certificates/
-openssl req -nodes -newkey rsa:4096 -keyout wepwawet.key -out wepwawet.csr -subj "/CN=wepwawet"
+openssl req -nodes -newkey rsa:4096 -keyout hereabouts.key -out hereabouts.csr -subj "/CN=hereabouts"
 ```
 
-Keep `wepwawet.key` secret — never commit it.
+Keep `hereabouts.key` secret — never commit it.
 
 ### 2. Get the certificate signed by Nextcloud
 
 Submit a pull request to `https://github.com/nextcloud/app-certificate-requests`:
 
-- Create the file `wepwawet/wepwawet.csr` in the PR with the contents of `~/.nextcloud/certificates/wepwawet.csr`
-- Include a link to the repo (`https://github.com/jannesklee/wepwawet`) in the PR description
+- Create the file `hereabouts/hereabouts.csr` in the PR with the contents of `~/.nextcloud/certificates/hereabouts.csr`
+- Include a link to the repo (`https://github.com/jannesklee/hereabouts`) in the PR description
 
-Nextcloud reviewers will sign it and post `wepwawet.crt` back in the PR.
-Save the certificate to `~/.nextcloud/certificates/wepwawet.crt`.
+Nextcloud reviewers will sign it and post `hereabouts.crt` back in the PR.
+Save the certificate to `~/.nextcloud/certificates/hereabouts.crt`.
 
 ### 3. Register the app on apps.nextcloud.com
 
 1. Create an account at `https://apps.nextcloud.com`
 2. Go to `https://apps.nextcloud.com/developer/apps/new`
-3. Paste the contents of `wepwawet.crt` into the **Certificate** field
+3. Paste the contents of `hereabouts.crt` into the **Certificate** field
 4. Generate the ownership proof:
    ```bash
-   echo -n "wepwawet" | openssl dgst -sha512 -sign ~/.nextcloud/certificates/wepwawet.key | openssl base64
+   echo -n "hereabouts" | openssl dgst -sha512 -sign ~/.nextcloud/certificates/hereabouts.key | openssl base64
    ```
 5. Paste the output into the **Signature** field and submit
 
@@ -51,8 +51,8 @@ On GitHub, go to repo **Settings → Secrets and variables → Actions** and add
 
 | Secret | Value |
 |---|---|
-| `APP_PRIVATE_KEY` | Full contents of `~/.nextcloud/certificates/wepwawet.key` |
-| `APP_PUBLIC_CRT` | Full contents of `~/.nextcloud/certificates/wepwawet.crt` |
+| `APP_PRIVATE_KEY` | Full contents of `~/.nextcloud/certificates/hereabouts.key` |
+| `APP_PUBLIC_CRT` | Full contents of `~/.nextcloud/certificates/hereabouts.crt` |
 | `APPSTORE_TOKEN` | The API token from apps.nextcloud.com |
 
 `GITHUB_TOKEN` (used to create the release and upload the tarball) is provided automatically by GitHub Actions — no separate secret needed.

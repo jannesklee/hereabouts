@@ -1,13 +1,13 @@
 <?php
 
-namespace OCA\Wepwawet\Controller;
+namespace OCA\Hereabouts\Controller;
 
-use OCA\Wepwawet\Db\Group;
-use OCA\Wepwawet\Db\GroupMapper;
-use OCA\Wepwawet\Db\GroupMember;
-use OCA\Wepwawet\Db\GroupMemberMapper;
-use OCA\Wepwawet\Db\GuestMapper;
-use OCA\Wepwawet\Db\PositionMapper;
+use OCA\Hereabouts\Db\Group;
+use OCA\Hereabouts\Db\GroupMapper;
+use OCA\Hereabouts\Db\GroupMember;
+use OCA\Hereabouts\Db\GroupMemberMapper;
+use OCA\Hereabouts\Db\GuestMapper;
+use OCA\Hereabouts\Db\PositionMapper;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
@@ -62,7 +62,7 @@ class GroupController extends Controller {
 		}
 
 		return new DataResponse([
-			'updateUrl' => $this->urlGenerator->linkToRoute('wepwawet.position.update'),
+			'updateUrl' => $this->urlGenerator->linkToRoute('hereabouts.position.update'),
 			'groups' => array_map(fn ($group) => $this->formatGroup($group), $groups),
 		]);
 	}
@@ -182,8 +182,8 @@ class GroupController extends Controller {
 			'memberCount'  => $memberCount,
 			'visible'      => $visible,
 			'inviteUrl'    => rtrim($this->urlGenerator->getAbsoluteURL('/'), '/')
-				. $this->urlGenerator->linkToRoute('wepwawet.page.join', ['token' => $group->getToken()]),
-			'positionsUrl' => $this->urlGenerator->linkToRoute('wepwawet.group.positions', ['id' => $group->getId()]),
+				. $this->urlGenerator->linkToRoute('hereabouts.page.join', ['token' => $group->getToken()]),
+			'positionsUrl' => $this->urlGenerator->linkToRoute('hereabouts.group.positions', ['id' => $group->getId()]),
 		];
 	}
 
@@ -233,7 +233,7 @@ class GroupController extends Controller {
 		}
 
 		return new DataResponse([
-			'main_url' => $this->urlGenerator->linkToRoute('wepwawet.page.index'),
+			'main_url' => $this->urlGenerator->linkToRoute('hereabouts.page.index'),
 		]);
 	}
 

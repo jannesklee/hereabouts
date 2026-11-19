@@ -38,7 +38,7 @@ interface GroupsResponse {
 }
 
 function url(config: AppConfig, path: string): string {
-  return `${normalizeUrl(config.serverUrl)}/apps/wepwawet${path}`;
+  return `${normalizeUrl(config.serverUrl)}/apps/hereabouts${path}`;
 }
 
 function headers(config: AppConfig): HeadersInit {
@@ -70,10 +70,10 @@ export async function sendPosition(
       headers: headers(config),
       body: JSON.stringify(body),
     });
-    if (!res.ok) console.error('[Wepwawet] sendPosition failed:', res.status, endpoint);
+    if (!res.ok) console.error('[Hereabouts] sendPosition failed:', res.status, endpoint);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] sendPosition error:', e);
+    console.error('[Hereabouts] sendPosition error:', e);
     return false;
   }
 }
@@ -95,7 +95,7 @@ export async function sendGuestPosition(
   heading: number | null,
 ): Promise<boolean> {
   try {
-    const endpoint = `${normalizeUrl(link.server)}/apps/wepwawet/guest/${link.token}`;
+    const endpoint = `${normalizeUrl(link.server)}/apps/hereabouts/guest/${link.token}`;
     const body = {
       name: link.name,
       lat,
@@ -112,10 +112,10 @@ export async function sendGuestPosition(
       headers: guestHeaders,
       body: JSON.stringify(body),
     });
-    if (!res.ok) console.error('[Wepwawet] sendGuestPosition failed:', res.status, endpoint);
+    if (!res.ok) console.error('[Hereabouts] sendGuestPosition failed:', res.status, endpoint);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] sendGuestPosition error:', e);
+    console.error('[Hereabouts] sendGuestPosition error:', e);
     return false;
   }
 }
@@ -128,13 +128,13 @@ export async function fetchGroupInfo(
 ): Promise<{ name: string; ownerDisplayName: string } | null> {
   try {
     const res = await fetch(
-      `${normalizeUrl(server)}/apps/wepwawet/join/${token}/info`,
+      `${normalizeUrl(server)}/apps/hereabouts/join/${token}/info`,
       { headers: guestHeaders },
     );
     if (!res.ok) return null;
     return (await res.json()) as { name: string; ownerDisplayName: string };
   } catch (e) {
-    console.error('[Wepwawet] fetchGroupInfo error:', e);
+    console.error('[Hereabouts] fetchGroupInfo error:', e);
     return null;
   }
 }
@@ -147,16 +147,16 @@ export async function fetchGuestPositions(link: GuestLink): Promise<Member[]> {
   try {
     const params = new URLSearchParams({ name: link.name });
     const res = await fetch(
-      `${normalizeUrl(link.server)}/apps/wepwawet/guest/${link.token}/positions?${params}`,
+      `${normalizeUrl(link.server)}/apps/hereabouts/guest/${link.token}/positions?${params}`,
       { headers: guestHeaders },
     );
     if (!res.ok) {
-      console.error('[Wepwawet] fetchGuestPositions failed:', res.status, await res.text());
+      console.error('[Hereabouts] fetchGuestPositions failed:', res.status, await res.text());
       return [];
     }
     return (await res.json()) as Member[];
   } catch (e) {
-    console.error('[Wepwawet] fetchGuestPositions error:', e);
+    console.error('[Hereabouts] fetchGuestPositions error:', e);
     return [];
   }
 }
@@ -165,11 +165,11 @@ export async function stopGuestLink(link: GuestLink): Promise<void> {
   try {
     const params = new URLSearchParams({ name: link.name, stop: '1' });
     await fetch(
-      `${normalizeUrl(link.server)}/apps/wepwawet/guest/${link.token}?${params}`,
+      `${normalizeUrl(link.server)}/apps/hereabouts/guest/${link.token}?${params}`,
       { method: 'POST', headers: guestHeaders },
     );
   } catch (e) {
-    console.error('[Wepwawet] stopGuestLink error:', e);
+    console.error('[Hereabouts] stopGuestLink error:', e);
   }
 }
 
@@ -179,12 +179,12 @@ export async function fetchGroups(
   try {
     const res = await fetch(url(config, '/api/groups'), { headers: headers(config) });
     if (!res.ok) {
-      console.error('[Wepwawet] fetchGroups failed:', res.status, await res.text());
+      console.error('[Hereabouts] fetchGroups failed:', res.status, await res.text());
       return null;
     }
     return (await res.json()) as GroupsResponse;
   } catch (e) {
-    console.error('[Wepwawet] fetchGroups error:', e);
+    console.error('[Hereabouts] fetchGroups error:', e);
     return null;
   }
 }
@@ -198,10 +198,10 @@ export async function joinGroup(
       url(config, `/join/${token}/accept`),
       { method: 'POST', headers: headers(config) },
     );
-    if (!res.ok) console.error('[Wepwawet] joinGroup failed:', res.status);
+    if (!res.ok) console.error('[Hereabouts] joinGroup failed:', res.status);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] joinGroup error:', e);
+    console.error('[Hereabouts] joinGroup error:', e);
     return false;
   }
 }
@@ -216,12 +216,12 @@ export async function createGroup(
       { method: 'POST', headers: headers(config) },
     );
     if (!res.ok) {
-      console.error('[Wepwawet] createGroup failed:', res.status, await res.text());
+      console.error('[Hereabouts] createGroup failed:', res.status, await res.text());
       return null;
     }
     return (await res.json()) as Group;
   } catch (e) {
-    console.error('[Wepwawet] createGroup error:', e);
+    console.error('[Hereabouts] createGroup error:', e);
     return null;
   }
 }
@@ -236,10 +236,10 @@ export async function setGroupVisibility(
       url(config, `/group/${groupId}/visibility?visible=${visible ? '1' : '0'}`),
       { method: 'POST', headers: headers(config) },
     );
-    if (!res.ok) console.error('[Wepwawet] setGroupVisibility failed:', res.status);
+    if (!res.ok) console.error('[Hereabouts] setGroupVisibility failed:', res.status);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] setGroupVisibility error:', e);
+    console.error('[Hereabouts] setGroupVisibility error:', e);
     return false;
   }
 }
@@ -254,10 +254,10 @@ export async function removeGroupMember(
       url(config, `/group/${groupId}/members/${encodeURIComponent(userId)}/remove`),
       { method: 'POST', headers: headers(config) },
     );
-    if (!res.ok) console.error('[Wepwawet] removeGroupMember failed:', res.status);
+    if (!res.ok) console.error('[Hereabouts] removeGroupMember failed:', res.status);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] removeGroupMember error:', e);
+    console.error('[Hereabouts] removeGroupMember error:', e);
     return false;
   }
 }
@@ -271,10 +271,10 @@ export async function deleteGroup(
       url(config, `/group/${groupId}/delete`),
       { method: 'POST', headers: headers(config) },
     );
-    if (!res.ok) console.error('[Wepwawet] deleteGroup failed:', res.status);
+    if (!res.ok) console.error('[Hereabouts] deleteGroup failed:', res.status);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] deleteGroup error:', e);
+    console.error('[Hereabouts] deleteGroup error:', e);
     return false;
   }
 }
@@ -285,16 +285,16 @@ export async function fetchMembers(
 ): Promise<Member[]> {
   try {
     const res = await fetch(
-      `${normalizeUrl(config.serverUrl)}/apps/wepwawet/group/${groupId}/positions`,
+      `${normalizeUrl(config.serverUrl)}/apps/hereabouts/group/${groupId}/positions`,
       { headers: headers(config) },
     );
     if (!res.ok) {
-      console.error('[Wepwawet] fetchMembers failed:', res.status, await res.text());
+      console.error('[Hereabouts] fetchMembers failed:', res.status, await res.text());
       return [];
     }
     return (await res.json()) as Member[];
   } catch (e) {
-    console.error('[Wepwawet] fetchMembers error:', e);
+    console.error('[Hereabouts] fetchMembers error:', e);
     return [];
   }
 }
@@ -303,12 +303,12 @@ export async function fetchShares(config: AppConfig): Promise<Share[]> {
   try {
     const res = await fetch(url(config, '/shares'), { headers: headers(config) });
     if (!res.ok) {
-      console.error('[Wepwawet] fetchShares failed:', res.status, await res.text());
+      console.error('[Hereabouts] fetchShares failed:', res.status, await res.text());
       return [];
     }
     return (await res.json()) as Share[];
   } catch (e) {
-    console.error('[Wepwawet] fetchShares error:', e);
+    console.error('[Hereabouts] fetchShares error:', e);
     return [];
   }
 }
@@ -323,12 +323,12 @@ export async function createShare(
       { method: 'POST', headers: headers(config) },
     );
     if (!res.ok) {
-      console.error('[Wepwawet] createShare failed:', res.status, await res.text());
+      console.error('[Hereabouts] createShare failed:', res.status, await res.text());
       return null;
     }
     return (await res.json()) as Share;
   } catch (e) {
-    console.error('[Wepwawet] createShare error:', e);
+    console.error('[Hereabouts] createShare error:', e);
     return null;
   }
 }
@@ -342,10 +342,10 @@ export async function revokeShare(
       method: 'POST',
       headers: headers(config),
     });
-    if (!res.ok) console.error('[Wepwawet] revokeShare failed:', res.status);
+    if (!res.ok) console.error('[Hereabouts] revokeShare failed:', res.status);
     return res.ok;
   } catch (e) {
-    console.error('[Wepwawet] revokeShare error:', e);
+    console.error('[Hereabouts] revokeShare error:', e);
     return false;
   }
 }

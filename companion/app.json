@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Wepwawet",
-    "slug": "wepwawet-companion",
+    "name": "Hereabouts",
+    "slug": "hereabouts-companion",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -11,11 +11,11 @@
       "android"
     ],
     "ios": {
-      "bundleIdentifier": "com.wepwawet.companion",
+      "bundleIdentifier": "com.hereabouts.companion",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Wepwawet needs your location to share it with others.",
-        "NSLocationAlwaysUsageDescription": "Wepwawet needs your location in the background to continuously share it.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Wepwawet needs your location in the background to continuously share it.",
+        "NSLocationWhenInUseUsageDescription": "Hereabouts needs your location to share it with others.",
+        "NSLocationAlwaysUsageDescription": "Hereabouts needs your location in the background to continuously share it.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Hereabouts needs your location in the background to continuously share it.",
         "UIBackgroundModes": [
           "location",
           "fetch"
@@ -23,7 +23,7 @@
       }
     },
     "android": {
-      "package": "com.wepwawet.companion",
+      "package": "com.hereabouts.companion",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-foreground.png",
         "monochromeImage": "./assets/adaptive-icon-monochrome.png",
@@ -42,9 +42,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Wepwawet needs your location in the background to continuously share it.",
-          "locationAlwaysPermission": "Wepwawet needs your location in the background to continuously share it.",
-          "locationWhenInUsePermission": "Wepwawet needs your location to share it with others.",
+          "locationAlwaysAndWhenInUsePermission": "Hereabouts needs your location in the background to continuously share it.",
+          "locationAlwaysPermission": "Hereabouts needs your location in the background to continuously share it.",
+          "locationWhenInUsePermission": "Hereabouts needs your location to share it with others.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true
         }

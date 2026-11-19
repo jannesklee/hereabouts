@@ -1,11 +1,11 @@
-# Release pipeline for GitHub (github.com/jannesklee/wepwawet) — the sole
+# Release pipeline for GitHub (github.com/jannesklee/hereabouts) — the sole
 # CI/release path for this repo. Triggers on a v*.*.* tag push.
 #
 # Before this can run:
 #   - A repo secret APPSTORE_TOKEN must exist (API token from apps.nextcloud.com)
 #     once the App Store push step below is uncommented.
 #   - Once signing is enabled, an APP_PRIVATE_KEY secret (the contents of
-#     wepwawet.key) must exist too.
+#     hereabouts.key) must exist too.
 
 name: Release
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Create release tarball
         run: |
-          APP_ID=wepwawet
+          APP_ID=hereabouts
           VERSION=${{ steps.version.outputs.version }}
           ARCHIVE="${APP_ID}-${VERSION}.tar.gz"
 
@@ -66,9 +66,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Wepwawet ${{ github.ref_name }}"
+          name: "Hereabouts ${{ github.ref_name }}"
           body: |
-            See [CHANGELOG](https://github.com/jannesklee/wepwawet/blob/main/CHANGELOG.md) for what's new.
+            See [CHANGELOG](https://github.com/jannesklee/hereabouts/blob/main/CHANGELOG.md) for what's new.
           files: ${{ env.ARCHIVE }}
           # When signing is enabled, change the line above to:
           # files: |
@@ -83,8 +83,8 @@ jobs:
       # - name: Publish to Nextcloud App Store
       #   uses: R0Wi/nextcloud-appstore-push-action@v1
       #   with:
-      #     app-name: wepwawet
+      #     app-name: hereabouts
       #     apps-repo-token: ${{ secrets.APPSTORE_TOKEN }}
-      #     download-url: "https://github.com/jannesklee/wepwawet/releases/download/${{ github.ref_name }}/${{ env.ARCHIVE }}"
+      #     download-url: "https://github.com/jannesklee/hereabouts/releases/download/${{ github.ref_name }}/${{ env.ARCHIVE }}"
       #     signature: file://.sig
       #     nightly: false

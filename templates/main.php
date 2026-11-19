@@ -1,6 +1,6 @@
 <?php
-$appId = OCA\Wepwawet\AppInfo\Application::APP_ID;
+$appId = OCA\Hereabouts\AppInfo\Application::APP_ID;
 \OCP\Util::addScript($appId, $appId . '-main');
 \OCP\Util::addStyle($appId, $appId . '-main');
 ?>
-<div id="wepwawet-app"></div>
+<div id="hereabouts-app"></div>

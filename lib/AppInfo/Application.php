@@ -1,6 +1,6 @@
 <?php
 
-namespace OCA\Wepwawet\AppInfo;
+namespace OCA\Hereabouts\AppInfo;
 
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -10,7 +10,7 @@ use OCP\AppFramework\Http\ContentSecurityPolicy;
 
 class Application extends App implements IBootstrap {
 
-	public const APP_ID = 'wepwawet';
+	public const APP_ID = 'hereabouts';
 
 	public function __construct(array $urlParams = []) {
 		parent::__construct(self::APP_ID, $urlParams);

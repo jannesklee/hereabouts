@@ -1,12 +1,12 @@
 <?php
 
-namespace OCA\Wepwawet\Controller;
+namespace OCA\Hereabouts\Controller;
 
-use OCA\Wepwawet\Db\Guest;
-use OCA\Wepwawet\Db\GuestMapper;
-use OCA\Wepwawet\Db\GroupMapper;
-use OCA\Wepwawet\Db\Position;
-use OCA\Wepwawet\Db\PositionMapper;
+use OCA\Hereabouts\Db\Guest;
+use OCA\Hereabouts\Db\GuestMapper;
+use OCA\Hereabouts\Db\GroupMapper;
+use OCA\Hereabouts\Db\Position;
+use OCA\Hereabouts\Db\PositionMapper;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;

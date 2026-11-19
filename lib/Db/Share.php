@@ -1,6 +1,6 @@
 <?php
 
-namespace OCA\Wepwawet\Db;
+namespace OCA\Hereabouts\Db;
 
 use OCP\AppFramework\Db\Entity;
 use OCP\DB\Types;

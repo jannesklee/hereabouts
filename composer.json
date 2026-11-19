@@ -1,11 +1,11 @@
 {
-	"name": "wepwawet/wepwawet",
+	"name": "hereabouts/hereabouts",
 	"description": "Live location sharing for Nextcloud",
 	"license": "AGPL-3.0-or-later",
 	"require": {},
 	"autoload": {
 		"psr-4": {
-			"OCA\\Wepwawet\\": "lib/"
+			"OCA\\Hereabouts\\": "lib/"
 		}
 	}
 }
