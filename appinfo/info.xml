@@ -15,7 +15,7 @@
     <screenshot>https://github.com/jannesklee/hereabouts/raw/main/img/screenshot.png</screenshot>
     <screenshot>https://github.com/jannesklee/hereabouts/raw/main/img/screenshot_share.png</screenshot>
     <dependencies>
-        <nextcloud min-version="30" max-version="34"/>
+        <nextcloud min-version="33" max-version="35"/>
     </dependencies>
     <background-jobs>
         <job>OCA\Hereabouts\BackgroundJob\CleanupExpiredGuests</job>

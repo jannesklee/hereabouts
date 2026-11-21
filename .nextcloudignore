@@ -23,8 +23,12 @@ babel.config.*
 .stylelintrc*
 
 # Dev environment
+scripts/
 docker-compose*.yml
 .env*
+
+# Screenshots (App Store and README load them from GitHub)
+img/screenshot*.png
 
 # Misc
 *.map

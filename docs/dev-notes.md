@@ -119,8 +119,30 @@ Fix: a `<meta name="referrer">` element in the page itself *can* relax this for 
 
 The longer-term, more complete fix (already flagged in `CLAUDE.md`'s roadmap) is proxying tiles through Nextcloud instead of hitting `tile.openstreetmap.org` directly from the browser — better for privacy (family members' IPs aren't correlated with location tile requests by a third party) and removes this whole class of issue. Not done yet.
 
-## App renames: table names with a default primary key must stay ≤ 22 characters
+## Migration name limits differ by Nextcloud version (matters for app renames)
 
-When the app was renamed to Hereabouts (2026-11-19), the straight find-and-replace would have turned `wepwawet_group_members` (22 chars) into `hereabouts_group_members` (24 chars), and `occ app:enable` would then fail with `Primary index name on "oc_hereabouts_group_members" is too long.` Root cause: `MigrationService::ensureOracleConstraints()` in Nextcloud core (`lib/private/DB/MigrationService.php`, checked on `stable30`/`stable32`) rejects any table whose name, minus the `oc_` prefix, is **≥ 23 characters** if the table uses the default primary-key name (a plain `setPrimaryKey(['id'])`, as every table here does). This check runs on **every** database backend, not just Oracle: `checkOracle` is enabled for any app whose `info.xml` has no `<dependencies><database>` element, which includes this one.
+When the app was renamed to Hereabouts (2026-11-19), the `wepwawet_group_members` table became `hereabouts_members`, not `hereabouts_group_members` (24 chars). Reason: on Nextcloud ≤ 32, `MigrationService::ensureOracleConstraints()` rejects any table whose name (minus the `oc_` prefix) is **≥ 23 characters** if it uses the default primary-key name (a plain `setPrimaryKey(['id'])`). The error is `Primary index name on "oc_..." is too long.` This check runs on every database, not just Oracle: `checkOracle` is on for any app whose `info.xml` has no `<dependencies><database>` element, which includes this one. Other ≤ 32 limits: table names ≤ 27, column/index names ≤ 30.
 
-Fix: the table is now `hereabouts_members` (18 chars). The other limits that check enforces: table names ≤ 27, column/index/foreign-key names ≤ 30. If the app is ever renamed again, re-measure every `createTable()`/`addIndex()`/`addUniqueIndex()` name in `lib/Migration/` before enabling it.
+From Nextcloud 33 on (checked `stable33`–`stable35`), that rule is gone and `ensureNamingConstraints()` allows names up to 63 characters including the prefix. Since the app now requires 33+, the short name is no longer strictly needed, but it's harmless. Re-check these limits if `min-version` in `info.xml` is ever lowered below 33.
+
+## Nextcloud 34/35 compatibility fixes (2026-11-21)
+
+Found while preparing to test on a Nextcloud 35 instance (`min-version` was 30, `max-version` 34):
+
+- **`addAllowedChildSrcDomain()` was removed in Nextcloud 34.** `lib/AppInfo/Application.php` called it as a fallback next to `addAllowedWorkerSrcDomain('blob:')`, which would crash the app's `boot()` with "Call to undefined method" on 34+. Removed it: `worker-src blob:` (still set) is what MapLibre's blob-URL web worker needs, and all current browsers support `worker-src`. Source: `developer_manual/release_notes/previous/upgrade_to_34.rst` in nextcloud/documentation.
+- **Boolean columns with `notnull => true` fail to install on Nextcloud ≤ 32.** `hereabouts_members.visible` is `Types::BOOLEAN` with `notnull => true`. On ≤ 32, `ensureOracleConstraints()` throws `is type Bool and also NotNull, so it can not store "false"`, even on a fresh install. Nextcloud 33+ allows it and only adjusts the column on Oracle (server PR #55156). Fix chosen: `min-version` raised to 33. 30–32 are end-of-life anyway (32 since 2026-09), so the app no longer claims support for them.
+- Everything else in the 34/35 upgrade notes doesn't affect this app. It uses none of the removed browser globals (`oc_requesttoken`, `OCDialogs`, `moment`, `_`, jQuery), and the migrations only use `addColumn`/`setPrimaryKey`/`addIndex`/`addUniqueIndex`/`hasColumn`/`getTable`, which keep the same signatures on 35's new `OCP\DB\Schema\ITable` wrapper.
+
+## Setting `apps_paths` one key at a time with `occ` takes the whole instance down
+
+Running `occ config:system:set apps_paths 0 path --value=...` as the first of several per-key commands writes an entry that has a `path` but no `url`. At startup, `lib/OC.php` (checked on `stable35`) skips every `apps_paths` entry missing either key. With no usable entry left, it throws `apps directory not found! Please put the Nextcloud apps folder in the Nextcloud folder...` on **every** request: the web UI and every later `occ` command fail, so `occ` can't undo it. Happened on the test instance on 2026-11-21.
+
+Fix: delete the half-written `'apps_paths'` block from `config/config.php` by hand (`php -l` it afterwards), restart php-fpm, then set the whole list in one command:
+
+```bash
+occ config:system:set apps_paths --type=json --value='[{"path":"/var/www/nextcloud/apps","url":"/apps","writable":false},{"path":"/var/www/nextcloud/custom_apps","url":"/custom_apps","writable":true}]'
+```
+
+The same applies to any other nested system-config value that Nextcloud only accepts as a whole: set it with `--type=json`, not key by key.
+
+Also: on a normal (archive) install, **no `apps_paths` is the default** and every app, shipped or from the App Store, lives in `apps/`. The `apps` + `custom_apps` split comes from the official Docker image (and our `docker-compose.dev.yml`). There's no reason to add it to a bare-metal test server; the test instance went back to the default and uses `apps/hereabouts`.

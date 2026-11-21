@@ -33,8 +33,6 @@ class Application extends App implements IBootstrap {
 		$csp->addAllowedImageDomain('https://*.tile.openstreetmap.org');
 		// MapLibre GL uses a web worker created from a blob URL
 		$csp->addAllowedWorkerSrcDomain('blob:');
-		// Older browsers may fall back to child-src for worker origin checks
-		$csp->addAllowedChildSrcDomain('blob:');
 
 		$cspManager->addDefaultPolicy($csp);
 	}

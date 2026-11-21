@@ -18,7 +18,7 @@ A minimal Nextcloud app for live location sharing — the self-hosted alternativ
 
 ## Requirements
 
-- Nextcloud 30–34
+- Nextcloud 33–35
 
 ## Installation
 
