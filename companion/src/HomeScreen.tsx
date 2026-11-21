@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -77,6 +78,8 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
   const [newGuestName, setNewGuestName] = useState('');
   const [newGuestDuration, setNewGuestDuration] = useState(60);
   const [joiningGuestLink, setJoiningGuestLink] = useState(false);
+  // Guest mode: who is in each joined group, for the status line in the list.
+  const [guestMembers, setGuestMembers] = useState<Record<string, Member[]>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const groupsRef = useRef<GroupWithMembers[]>([]);
 
@@ -123,6 +126,24 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  const guestLinksKey = config.guestLinks.map((l) => `${l.server}|${l.token}|${l.name}`).join(',');
+  useEffect(() => {
+    if (config.mode !== 'guest') return;
+    let cancelled = false;
+    async function loadGuestMembers() {
+      const entries = await Promise.all(
+        config.guestLinks.map(async (l) => [l.token, await fetchGuestPositions(l)] as const),
+      );
+      if (!cancelled) setGuestMembers(Object.fromEntries(entries));
+    }
+    loadGuestMembers();
+    const id = setInterval(loadGuestMembers, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [config.mode, guestLinksKey]);
 
   // Backfills groupName on links saved before that field existed (or where
   // the lookup failed at join time), so old configs pick up group labels
@@ -482,39 +503,17 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
                 )}
 
                 {config.guestLinks.map((link, i) => (
-                  <View
+                  <GroupRow
                     key={link.token}
-                    style={[styles.groupOverviewRow, i > 0 && styles.groupBlockBorder]}
-                  >
-                    <TouchableOpacity
-                      style={styles.groupNameTouchable}
-                      onPress={() => setOpenGuestToken(link.token)}
-                    >
-                      <View style={{ flexShrink: 1 }}>
-                        <Text style={styles.groupName} numberOfLines={1}>
-                          {link.groupName || 'Unnamed group'}
-                        </Text>
-                        <Text style={styles.memberSeen} numberOfLines={1}>
-                          sharing as {link.name}
-                        </Text>
-                      </View>
-                      <Text style={styles.chevron}>›</Text>
-                    </TouchableOpacity>
-                    <View style={styles.groupVisibleRow}>
-                      <Switch
-                        value={link.enabled}
-                        onValueChange={() => handleToggleGuestLink(link)}
-                        trackColor={{ true: PRIMARY, false: '#d1d5db' }}
-                        thumbColor="#fff"
-                      />
-                      <TouchableOpacity
-                        style={styles.memberRemoveBtn}
-                        onPress={() => handleRemoveGuestLink(link)}
-                      >
-                        <Text style={styles.memberRemoveText}>✕</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                    title={link.groupName || 'Unnamed group'}
+                    members={guestMembers[link.token] ?? null}
+                    shareLabel={`Share my location as ${link.name}`}
+                    shareValue={link.enabled}
+                    onShareChange={() => handleToggleGuestLink(link)}
+                    onOpen={() => setOpenGuestToken(link.token)}
+                    onLeave={() => handleRemoveGuestLink(link)}
+                    bordered={i > 0}
+                  />
                 ))}
 
                 <View style={[styles.newGroupRow, { marginTop: config.guestLinks.length ? 16 : 12 }]}>
@@ -659,29 +658,16 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
                 )}
 
                 {groups.map((group, i) => (
-                  <View
+                  <GroupRow
                     key={group.id}
-                    style={[styles.groupOverviewRow, i > 0 && styles.groupBlockBorder]}
-                  >
-                    <TouchableOpacity
-                      style={styles.groupNameTouchable}
-                      onPress={() => setOpenGroupId(group.id)}
-                    >
-                      <Text style={styles.groupName} numberOfLines={1}>
-                        {displayName(group)}
-                      </Text>
-                      <Text style={styles.chevron}>›</Text>
-                    </TouchableOpacity>
-                    <View style={styles.groupVisibleRow}>
-                      <Text style={styles.groupVisibleLabel}>Visible here</Text>
-                      <Switch
-                        value={group.visible}
-                        onValueChange={() => handleToggleGroupVisibility(group)}
-                        trackColor={{ true: PRIMARY, false: '#d1d5db' }}
-                        thumbColor="#fff"
-                      />
-                    </View>
-                  </View>
+                    title={displayName(group)}
+                    members={group.members}
+                    shareLabel="Share my location here"
+                    shareValue={group.visible}
+                    onShareChange={() => handleToggleGroupVisibility(group)}
+                    onOpen={() => setOpenGroupId(group.id)}
+                    bordered={i > 0}
+                  />
                 ))}
 
                 <View style={styles.newGroupRow}>
@@ -920,6 +906,132 @@ function GuestGroupDetail({
   );
 }
 
+// ── GroupRow ─────────────────────────────────────────────────────────────────
+// One group in the home screen's list. The whole upper part opens the group's
+// map; the member initials and the "Map" pill are there to make that obvious.
+// Sharing into the group is a separate line below, so the switch doesn't
+// compete with the tap target.
+
+function GroupRow({
+  title,
+  members,
+  shareLabel,
+  shareValue,
+  onShareChange,
+  onOpen,
+  onLeave,
+  bordered,
+}: {
+  title: string;
+  members: Member[] | null; // null = not loaded yet
+  shareLabel: string;
+  shareValue: boolean;
+  onShareChange: () => void;
+  onOpen: () => void;
+  onLeave?: () => void;
+  bordered: boolean;
+}) {
+  return (
+    <View style={[styles.groupBlock, bordered && styles.groupBlockBorder]}>
+      <Pressable
+        onPress={onOpen}
+        android_ripple={{ color: '#dbeafe' }}
+        style={({ pressed }) => [styles.groupMain, pressed && styles.groupMainPressed]}
+        accessibilityRole="button"
+        accessibilityLabel={`Open the map of ${title}`}
+      >
+        <AvatarStack members={members ?? []} />
+        <View style={styles.groupText}>
+          <Text style={styles.groupName} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.groupStatus} numberOfLines={1}>
+            {groupStatus(members)}
+          </Text>
+        </View>
+        <View style={styles.mapPill}>
+          <MaterialIcons name="map" size={16} color={PRIMARY} />
+          <Text style={styles.mapPillText}>Map</Text>
+        </View>
+      </Pressable>
+      <View style={styles.groupShareRow}>
+        <Text style={styles.groupShareLabel} numberOfLines={1}>
+          {shareLabel}
+        </Text>
+        <Switch
+          value={shareValue}
+          onValueChange={onShareChange}
+          trackColor={{ true: PRIMARY, false: '#d1d5db' }}
+          thumbColor="#fff"
+        />
+        {onLeave && (
+          <TouchableOpacity
+            style={styles.memberRemoveBtn}
+            onPress={onLeave}
+            accessibilityLabel={`Leave ${title}`}
+          >
+            <Text style={styles.memberRemoveText}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// Group picture made of initials circles, like the markers on the map: blue
+// for people who are sharing, grey for the rest. One member fills the square;
+// with more, two smaller circles overlap diagonally, the second one showing
+// "+N" when there are more than two. Always the same size, so names line up.
+function AvatarStack({ members }: { members: Member[] }) {
+  const sorted = [...members].sort((a, b) => Number(b.hasPosition) - Number(a.hasPosition));
+  const initial = (m: Member) => m.displayName.charAt(0).toUpperCase();
+  const idle = (m: Member) => !m.hasPosition && styles.stackAvatarIdle;
+
+  if (sorted.length <= 1) {
+    const m = sorted[0];
+    return (
+      <View style={styles.avatarStack}>
+        <View style={[styles.stackAvatar, styles.stackAvatarSingle, m ? idle(m) : styles.stackAvatarEmpty]}>
+          {m ? (
+            <Text style={styles.stackAvatarText}>{initial(m)}</Text>
+          ) : (
+            <MaterialIcons name="group" size={20} color="#9ca3af" />
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  const [first, second] = sorted;
+  const extra = sorted.length - 1;
+  return (
+    <View style={styles.avatarStack}>
+      <View style={[styles.stackAvatar, styles.stackAvatarBack, idle(first)]}>
+        <Text style={styles.stackAvatarText}>{initial(first)}</Text>
+      </View>
+      {sorted.length === 2 ? (
+        <View style={[styles.stackAvatar, styles.stackAvatarFront, idle(second)]}>
+          <Text style={styles.stackAvatarText}>{initial(second)}</Text>
+        </View>
+      ) : (
+        <View style={[styles.stackAvatar, styles.stackAvatarFront, styles.stackAvatarMore]}>
+          <Text style={styles.stackAvatarMoreText}>+{extra}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function groupStatus(members: Member[] | null): string {
+  if (members === null) return 'Loading…';
+  if (members.length === 0) return 'No one here yet';
+  if (members.every((m) => m.isMe)) return 'Just you so far';
+  const sharing = members.filter((m) => m.hasPosition);
+  if (sharing.length === 0) return `${members.length} members · nobody sharing`;
+  const latest = Math.max(...sharing.map((m) => m.updatedAt ?? 0));
+  return `${sharing.length} of ${members.length} sharing · ${formatLastSeen(latest || null).toLowerCase()}`;
+}
+
 // ── ShareRow ─────────────────────────────────────────────────────────────────
 
 function ShareRow({
@@ -1095,25 +1207,59 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  groupOverviewRow: {
+  groupBlock: { paddingVertical: 6 },
+  groupBlockBorder: { borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+  groupMain: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingVertical: 10,
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    marginHorizontal: -6,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
-  groupBlockBorder: { borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  groupNameTouchable: {
-    flex: 1,
+  groupMainPressed: { backgroundColor: '#eff6ff' },
+  groupText: { flex: 1, minWidth: 0 },
+  groupName: { fontSize: 15, fontWeight: '600', color: '#111' },
+  groupStatus: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  mapPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#e6f3fa',
   },
-  groupName: { fontSize: 14, fontWeight: '600', color: '#111', flexShrink: 1 },
-  chevron: { fontSize: 16, color: '#c1c7cf' },
-  groupVisibleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  groupVisibleLabel: { fontSize: 11, color: '#9ca3af' },
+  mapPillText: { fontSize: 13, fontWeight: '700', color: PRIMARY },
+  groupShareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 54,
+  },
+  groupShareLabel: { flex: 1, fontSize: 13, color: '#4b5563' },
+  avatarStack: { width: 44, height: 44 },
+  stackAvatar: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: PRIMARY,
+    borderWidth: 2,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stackAvatarSingle: { width: 40, height: 40, borderRadius: 20, top: 2, left: 2, borderWidth: 0 },
+  stackAvatarBack: { top: 0, left: 0 },
+  stackAvatarFront: { bottom: 0, right: 0 },
+  stackAvatarIdle: { backgroundColor: '#cbd5e1' },
+  stackAvatarEmpty: { backgroundColor: '#f3f4f6' },
+  stackAvatarMore: { backgroundColor: '#e5e7eb' },
+  stackAvatarText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  stackAvatarMoreText: { color: '#4b5563', fontWeight: '700', fontSize: 11 },
 
   backRow: { paddingVertical: 4, paddingHorizontal: 2 },
   backText: { fontSize: 15, fontWeight: '600', color: PRIMARY },
