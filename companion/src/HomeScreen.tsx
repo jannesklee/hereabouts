@@ -17,7 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Clipboard from 'expo-clipboard';
-import { type AppConfig, type GuestLink, parseInviteUrl, saveConfig } from './config';
+import { type AppConfig, type GuestLink, normalizeUrl, parseInviteUrl, saveConfig } from './config';
 import {
   fetchGroups,
   fetchMembers,
@@ -45,6 +45,10 @@ interface Props {
   config: AppConfig;
   onConfigChange: (config: AppConfig) => void;
   onReconfigure: () => void;
+  // Invite link the app was opened with (see App.tsx), and the callback to
+  // mark it as dealt with.
+  incomingInvite?: string | null;
+  onInviteHandled?: () => void;
 }
 
 interface GroupWithMembers extends Group {
@@ -58,7 +62,13 @@ const DURATIONS = [
   { minutes: 0, label: '∞' },
 ] as const;
 
-export default function HomeScreen({ config, onConfigChange, onReconfigure }: Props) {
+export default function HomeScreen({
+  config,
+  onConfigChange,
+  onReconfigure,
+  incomingInvite,
+  onInviteHandled,
+}: Props) {
   const [sharing, setSharing] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [groups, setGroups] = useState<GroupWithMembers[]>([]);
@@ -84,11 +94,90 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
   const [joiningGuestLink, setJoiningGuestLink] = useState(false);
   // Guest mode: who is in each joined group, for the status line in the list.
   const [guestMembers, setGuestMembers] = useState<Record<string, Member[]>>({});
+  // Group to open once the group list has it (after joining from an invite)
+  const [openWhenLoadedToken, setOpenWhenLoadedToken] = useState<string | null>(null);
+  const guestNameInputRef = useRef<TextInput>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const groupsRef = useRef<GroupWithMembers[]>([]);
 
   // Keep ref in sync so the poll interval can access it without a stale closure
   groupsRef.current = groups;
+
+  useEffect(() => {
+    if (!openWhenLoadedToken) return;
+    const group = groups.find((g) => g.token === openWhenLoadedToken);
+    if (group) {
+      setOpenGroupId(group.id);
+      setOpenWhenLoadedToken(null);
+    }
+  }, [groups, openWhenLoadedToken]);
+
+  // Opened from an invite link ("Open in the Hereabouts app" on the invite
+  // page). Nothing happens without the user confirming: with an account the
+  // app asks before joining, as a guest it fills in the join form.
+  useEffect(() => {
+    if (!incomingInvite) return;
+    onInviteHandled?.();
+    handleIncomingInvite(incomingInvite);
+  }, [incomingInvite]);
+
+  async function handleIncomingInvite(invite: string) {
+    const parsed = parseInviteUrl(invite);
+    if (!parsed) return;
+    setOpenGroupId(null);
+    setOpenGuestToken(null);
+
+    if (config.mode === 'guest') {
+      if (config.guestLinks.some((l) => l.token === parsed.token)) {
+        setOpenGuestToken(parsed.token);
+        return;
+      }
+      setNewGuestUrl(invite);
+      // After the list has rendered again
+      setTimeout(() => guestNameInputRef.current?.focus(), 300);
+      return;
+    }
+
+    // Account mode: invites only work on the server the app is logged in to
+    if (normalizeUrl(parsed.server).toLowerCase() !== normalizeUrl(config.serverUrl).toLowerCase()) {
+      Alert.alert(
+        'Invite for another server',
+        `This invite is for ${parsed.server}, but Hereabouts is logged in to ${config.serverUrl}. You can join it as a guest in the browser instead.`,
+        [
+          { text: 'Open in browser', onPress: () => Linking.openURL(invite) },
+          { text: 'Cancel', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
+    const existing = groupsRef.current.find((g) => g.token === parsed.token);
+    if (existing) {
+      setOpenGroupId(existing.id);
+      return;
+    }
+
+    const info = await fetchGroupInfo(parsed.server, parsed.token);
+    Alert.alert(
+      info ? `Join "${info.name}"?` : 'Join this group?',
+      `${info ? `${info.ownerDisplayName} invited you. ` : ''}You'll see everyone in the group on the map. Whether you share your own location there is up to you.`,
+      [
+        {
+          text: 'Join',
+          onPress: async () => {
+            const ok = await joinGroup(config, parsed.token);
+            if (!ok) {
+              Alert.alert("Couldn't join", 'Check your connection and try again.');
+              return;
+            }
+            setOpenWhenLoadedToken(parsed.token);
+            loadGroups();
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }
 
   const loadGroups = useCallback(async () => {
     const resp = await fetchGroups(config);
@@ -546,6 +635,7 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
             </View>
             <View style={styles.newGroupRow}>
               <TextInput
+                ref={guestNameInputRef}
                 style={styles.newGroupInput}
                 value={newGuestName}
                 onChangeText={setNewGuestName}

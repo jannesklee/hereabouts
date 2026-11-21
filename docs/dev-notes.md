@@ -193,3 +193,8 @@ Cause: core `server.css` (checked on the test server, NC 35) styles every bare f
 Fix: scope the page's styles under `#hereabouts-join` (an ID beats the long `:not()` chains), and set `height`, `margin`, `width` and the `:hover`/`:focus` states explicitly on every input and button.
 
 Related: the public layout's `#content` is a fixed flex row with no background. A card placed in it directly shrinks to its content width. `join.php` therefore positions `#hereabouts-join` fixed below the header, like `Viewer.vue`. It stays transparent, so the theme background behind the header continues behind the card.
+
+## Link previews and the app link: testing gotchas (2026-11-21)
+
+- **Chat apps cache link previews per URL.** WhatsApp, Signal and others fetch a link's Open Graph tags (`PageController::addLinkPreview`) once and keep the result. An invite link that was pasted into a chat before the tags existed keeps showing the old "Nextcloud" preview. To test, use a link that has never been shared, e.g. a newly created group or share link.
+- **`companion/app.json` changes need a prebuild.** `companion/android/` is generated and gitignored, so changing something native in `app.json` (here: `"scheme": "hereabouts"`) only takes effect after `npx expo prebuild --platform android --no-install` has rewritten `AndroidManifest.xml`. Without it, the APK builds fine but Android doesn't know the app handles `hereabouts://` links, so the invite page's "Open in the Hereabouts app" link falls back to the browser. Check with `aapt2 dump xmltree --file AndroidManifest.xml app-release.apk | grep scheme`.

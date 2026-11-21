@@ -24,6 +24,7 @@ $iconGroup = $icon('M12,5.5A3.5,3.5 0 0,1 15.5,9A3.5,3.5 0 0,1 12,12.5A3.5,3.5 0
 $iconCheck = $icon('M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z');
 $iconAlert = $icon('M11,15H13V17H11V15M11,7H13V13H11V7M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z');
 $iconRemoved = $icon('M1.46,8.88L2.88,7.46L5,9.59L7.12,7.46L8.54,8.88L6.41,11L8.54,13.12L7.12,14.54L5,12.41L2.88,14.54L1.46,13.12L3.59,11L1.46,8.88M15,4A4,4 0 0,1 19,8A4,4 0 0,1 15,12A4,4 0 0,1 11,8A4,4 0 0,1 15,4M15,5.9A2.1,2.1 0 0,0 12.9,8A2.1,2.1 0 0,0 15,10.1C16.16,10.1 17.1,9.16 17.1,8C17.1,6.84 16.16,5.9 15,5.9M15,13C17.67,13 23,14.33 23,17V20H7V17C7,14.33 12.33,13 15,13M15,14.9C12,14.9 8.9,16.36 8.9,17V18.1H21.1V17C21.1,16.36 17.97,14.9 15,14.9Z');
+$iconPhone = $icon('M17,19H7V5H17M17,1H7C5.89,1 5,1.89 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3C19,1.89 18.1,1 17,1Z');
 $iconShield = $icon('M21,11C21,16.55 17.16,21.74 12,23C6.84,21.74 3,16.55 3,11V5L12,1L21,5V11M12,21C15.75,20 19,15.54 19,11.22V6.3L12,3.18L5,6.3V11.22C5,15.54 8.25,20 12,21M14.8,11V9.5C14.8,8.1 13.4,7 12,7C10.6,7 9.2,8.1 9.2,9.5V11C8.6,11 8,11.6 8,12.2V15.7C8,16.4 8.6,17 9.2,17H14.7C15.4,17 16,16.4 16,15.8V12.3C16,11.6 15.4,11 14.8,11M13.5,11H10.5V9.5C10.5,8.7 11.2,8.2 12,8.2C12.8,8.2 13.5,8.7 13.5,9.5V11Z');
 ?>
 <div id="hereabouts-join"
@@ -51,6 +52,9 @@ $iconShield = $icon('M21,11C21,16.55 17.16,21.74 12,23C6.84,21.74 3,16.55 3,11V5
 		</div>
 		<p class="ls-join-desc">You'll see everyone in this group on your map. Whether you share your own location is a separate choice you can make at any time.</p>
 		<button id="ls-join-group-btn" type="button" class="ls-btn ls-btn--primary">Join group</button>
+		<!-- Shown by join.js on Android only -->
+		<a class="ls-join-applink" id="ls-open-app" hidden><?php print_unescaped($iconPhone); ?>Open in the Hereabouts app</a>
+		<p class="ls-join-applink-missing" id="ls-app-missing" hidden>The Hereabouts app isn't installed on this phone.</p>
 	</div>
 
 	<div class="ls-join-card" id="ls-user-joined-view" style="display:none">
@@ -115,6 +119,9 @@ $iconShield = $icon('M21,11C21,16.55 17.16,21.74 12,23C6.84,21.74 3,16.55 3,11V5
 			<?php if ($debug): ?>
 			<button id="ls-fake-btn" type="button" class="ls-btn ls-btn--secondary">Use fake location (testing)</button>
 			<?php endif; ?>
+			<!-- Shown by join.js on Android only -->
+			<a class="ls-join-applink" id="ls-open-app" hidden><?php print_unescaped($iconPhone); ?>Open in the Hereabouts app</a>
+			<p class="ls-join-applink-missing" id="ls-app-missing" hidden>The Hereabouts app isn't installed on this phone. You can share right here instead.</p>
 		</div>
 
 		<div class="ls-join-note">
@@ -341,6 +348,31 @@ $iconShield = $icon('M21,11C21,16.55 17.16,21.74 12,23C6.84,21.74 3,16.55 3,11V5
 }
 #hereabouts-join .ls-btn--secondary:hover { background: var(--color-primary-element-light-hover, #d8ebf6); }
 #hereabouts-join .ls-btn:disabled { opacity: .6; cursor: default; }
+
+/* "Open in the Hereabouts app" (Android only, see join.js) */
+#hereabouts-join .ls-join-applink {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-height: 44px;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--color-primary-element, #0082c9);
+	text-decoration: none;
+	cursor: pointer;
+}
+#hereabouts-join .ls-join-applink:hover { text-decoration: underline; }
+#hereabouts-join .ls-join-applink svg { width: 18px; height: 18px; fill: currentColor; flex-shrink: 0; }
+#hereabouts-join .ls-join-applink[hidden],
+#hereabouts-join .ls-join-applink-missing[hidden] { display: none; }
+#hereabouts-join .ls-join-applink-missing {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.5;
+	text-align: center;
+	color: var(--color-text-maxcontrast, #767676);
+}
 
 /* ── Privacy note ── */
 #hereabouts-join .ls-join-note {

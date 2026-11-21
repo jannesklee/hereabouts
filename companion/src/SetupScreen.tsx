@@ -40,6 +40,9 @@ interface Props {
   onSaved: (config: AppConfig) => void;
   initialConfig?: AppConfig | null;
   onCancel?: () => void;
+  // Invite link the app was opened with (see App.tsx): pre-fills the guest
+  // form, and the server for logging in with an account.
+  incomingInvite?: string | null;
 }
 
 const DURATIONS = [
@@ -49,7 +52,7 @@ const DURATIONS = [
   { minutes: 0, label: '∞' },
 ] as const;
 
-export default function SetupScreen({ onSaved, initialConfig, onCancel }: Props) {
+export default function SetupScreen({ onSaved, initialConfig, onCancel, incomingInvite }: Props) {
   const [mode, setMode] = useState<AuthMode>(initialConfig?.mode ?? 'nextcloud');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +76,18 @@ export default function SetupScreen({ onSaved, initialConfig, onCancel }: Props)
   const [inviteUrl, setInviteUrl] = useState('');
   const [guestName, setGuestName] = useState('');
   const [guestDuration, setGuestDuration] = useState(60);
+
+  // Opened from an invite before the app was set up: most likely a guest, so
+  // show the guest form filled in. Logging in with an account instead still
+  // works; the invite stays pending and HomeScreen offers to join afterwards.
+  useEffect(() => {
+    if (!incomingInvite) return;
+    const parsed = parseInviteUrl(incomingInvite);
+    if (!parsed) return;
+    setMode('guest');
+    setInviteUrl(incomingInvite);
+    if (!initialConfig) setServerUrl((current) => current || parsed.server);
+  }, [incomingInvite]);
 
   const canSave =
     mode === 'nextcloud'

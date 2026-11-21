@@ -127,9 +127,41 @@ class PageController extends Controller {
 		// HTTP header itself can't be overridden from app code.
 		\OCP\Util::addHeader('meta', ['name' => 'referrer', 'content' => 'strict-origin-when-cross-origin']);
 
+		$this->addLinkPreview(
+			$this->l->t('%1$s invited you to "%2$s"', [$ownerDisplayName, $group->getName()]),
+			$this->l->t('Join the group to see each other on a map and share your own location. Works in the browser, no account needed.'),
+			'preview-group.png',
+			$this->urlGenerator->linkToRouteAbsolute('hereabouts.page.join', ['token' => $token]),
+		);
+
 		$response->setHeaderTitle($this->l->t('Share your location'));
 		$response->setFooterVisible(false);
 		return $response;
+	}
+
+	/**
+	 * Open Graph tags, so chat apps (WhatsApp, Signal, Telegram, ...) show a
+	 * proper preview for invite and share links instead of just "Nextcloud".
+	 * Nextcloud's public layout has none of its own. Never put anything
+	 * about where someone is in here: the preview is fetched by the chat
+	 * service and cached there.
+	 */
+	private function addLinkPreview(string $title, string $description, string $image, string $url): void {
+		$tags = [
+			'og:type' => 'website',
+			'og:site_name' => 'Hereabouts',
+			'og:title' => $title,
+			'og:description' => $description,
+			'og:url' => $url,
+			'og:image' => $this->urlGenerator->getAbsoluteURL($this->urlGenerator->imagePath(Application::APP_ID, $image)),
+			'og:image:width' => '600',
+			'og:image:height' => '600',
+		];
+		foreach ($tags as $property => $content) {
+			\OCP\Util::addHeader('meta', ['property' => $property, 'content' => $content]);
+		}
+		\OCP\Util::addHeader('meta', ['name' => 'description', 'content' => $description]);
+		\OCP\Util::addHeader('meta', ['name' => 'twitter:card', 'content' => 'summary']);
 	}
 
 	#[PublicPage]
@@ -176,6 +208,15 @@ class PageController extends Controller {
 		// can relax this for the document's own outgoing requests even though the
 		// HTTP header itself can't be overridden from app code.
 		\OCP\Util::addHeader('meta', ['name' => 'referrer', 'content' => 'strict-origin-when-cross-origin']);
+
+		$this->addLinkPreview(
+			$this->l->t('%s is sharing a live location with you', [$ownerDisplayName]),
+			$share->getExpiresAt() !== null
+				? $this->l->t('Open the link to see on a map where %s is right now. Your own location is not shared. The link works for a limited time.', [$ownerDisplayName])
+				: $this->l->t('Open the link to see on a map where %s is right now. Your own location is not shared.', [$ownerDisplayName]),
+			'preview-person.png',
+			$this->urlGenerator->linkToRouteAbsolute('hereabouts.page.view', ['token' => $token]),
+		);
 
 		$response = new PublicTemplateResponse(Application::APP_ID, 'viewer', []);
 		$response->setHeaderTitle($ownerDisplayName . ' — ' . $this->l->t('Live location'));

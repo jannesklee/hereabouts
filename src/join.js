@@ -27,12 +27,33 @@ import GuestLive from './GuestLive.vue'
 			})
 		}
 
+		setupAppLink()
 		if (container.dataset.userId) {
 			setupUserInviteFlow(container)
 		} else {
 			setupGuestFlow(container)
 		}
 	})
+
+	// "Open in the Hereabouts app", on Android only. An intent:// link opens
+	// the companion app (hereabouts://join?url=<this invite>) if it's
+	// installed; otherwise the browser comes back here with ?app=missing and
+	// the page says so. Other platforms have no app to open.
+	function setupAppLink() {
+		var link = document.getElementById('ls-open-app')
+		var missing = document.getElementById('ls-app-missing')
+		if (!link || !/Android/i.test(navigator.userAgent)) return
+
+		var inviteUrl = window.location.origin + window.location.pathname
+		if (new URLSearchParams(window.location.search).get('app') === 'missing') {
+			if (missing) missing.hidden = false
+			return
+		}
+		link.href = 'intent://join?url=' + encodeURIComponent(inviteUrl)
+			+ '#Intent;scheme=hereabouts;package=com.hereabouts.companion;'
+			+ 'S.browser_fallback_url=' + encodeURIComponent(inviteUrl + '?app=missing') + ';end'
+		link.hidden = false
+	}
 
 	// Logged-in Nextcloud user: joining a group is a single, immediate action.
 	// No name to enter (already known), no duration to pick (visibility is a
