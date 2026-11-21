@@ -1,7 +1,7 @@
 <!--
   The live map used by every map page (logged-in groups in App.vue, guests in
-  GuestLive.vue), so they look and behave the same: the map fills the space,
-  with a floating top bar (live dot, title, "2 of 3 sharing"), map buttons on
+  GuestLive.vue, share links in Viewer.vue), so they look and behave the same:
+  the map fills the space, with a floating top bar (title, "2 of 3 sharing"), map buttons on
   the right, and a strip of member chips at the bottom. Clicking a chip or
   marker follows that person; clicking again frames everyone. Pages add their
   own buttons to the top bar through the "leading" and "actions" slots.
@@ -12,12 +12,6 @@
 
 		<div class="ls-map-topbar" :class="{ 'ls-map-topbar--after-toggle': afterToggle }">
 			<slot name="leading" />
-			<span
-				class="ls-live-dot"
-				:class="{ 'ls-live-dot--on': meSharing }"
-				role="img"
-				:title="meSharing ? 'You are sharing your location here' : 'You are not sharing your location here'"
-				:aria-label="meSharing ? 'You are sharing your location here' : 'You are not sharing your location here'" />
 			<div class="ls-map-topbar-text">
 				<span class="ls-map-title">{{ title }}</span>
 				<span class="ls-map-subtitle">{{ subtitle }}</span>
@@ -178,10 +172,6 @@ export default {
 
 		me() {
 			return this.positionedMembers.find((m) => m.isMe) || null
-		},
-
-		meSharing() {
-			return this.me !== null && !isStale(this.me.updatedAt, this.nowTs)
 		},
 
 		// You first, then people who are sharing, then the rest.
@@ -492,34 +482,6 @@ export default {
 	left: calc(var(--app-navigation-padding, 8px) * 2 + var(--default-clickable-area, 34px));
 }
 
-.ls-live-dot {
-	position: relative;
-	width: 10px;
-	height: 10px;
-	flex-shrink: 0;
-	margin: 0 6px 0 10px;
-	border-radius: 50%;
-	background: #c8c8c8;
-}
-
-.ls-live-dot--on {
-	background: #46ba61;
-}
-
-.ls-live-dot--on::after {
-	content: '';
-	position: absolute;
-	inset: 0;
-	border-radius: 50%;
-	background: #46ba61;
-	animation: ls-live-pulse 2s ease-out infinite;
-}
-
-@keyframes ls-live-pulse {
-	0% { transform: scale(1); opacity: .6; }
-	100% { transform: scale(3); opacity: 0; }
-}
-
 .ls-map-topbar-text {
 	flex: 1;
 	min-width: 0;
@@ -527,6 +489,15 @@ export default {
 	flex-direction: column;
 	text-align: left;
 	line-height: 1.25;
+}
+
+/* Room to the rounded edge when there's no button on that side */
+.ls-map-topbar-text:first-child {
+	padding-left: 14px;
+}
+
+.ls-map-topbar-text:last-child {
+	padding-right: 14px;
 }
 
 .ls-map-title {

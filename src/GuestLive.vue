@@ -20,6 +20,7 @@
 
 <script>
 import LiveMap from './components/LiveMap.vue'
+import { formatRemaining } from './utils/remaining.js'
 
 const POLL_MS = 10000
 
@@ -56,14 +57,8 @@ export default {
 	computed: {
 		expiryLabel() {
 			if (!this.sharing.expiresAt) return null
-			const diff = this.sharing.expiresAt - this.nowTs
-			if (diff <= 0) return null
-			// Whole minutes, rounded up: "1 min" until the very end
-			const minutes = Math.ceil(diff / 60)
-			const h = Math.floor(minutes / 60)
-			const m = minutes % 60
-			if (h > 0) return m > 0 ? `stops in ${h}h ${m}min` : `stops in ${h}h`
-			return `stops in ${m} min`
+			const left = formatRemaining(this.sharing.expiresAt - this.nowTs)
+			return left ? `stops in ${left}` : null
 		},
 	},
 
