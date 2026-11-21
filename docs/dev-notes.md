@@ -171,3 +171,7 @@ Starting the companion with `CI=1 npx expo run:android` (or `expo start`) makes 
 
 - **Marker stacking:** `@maplibre/maplibre-react-native` (v11) draws `<Marker>`s in the order they were *added* to the native map. Reordering the React children doesn't change it. When two people are at the same spot, the selected person's marker would stay hidden. `GroupMap.tsx` gives the selected marker a different `key`, so React removes it and adds it again as the topmost one.
 - **Hot reload:** a Fast Refresh that touches a file importing the MapLibre module fails with `Invariant Violation: Tried to register two views with the same name MLRNVectorSource`. Not a code bug: do a full reload (reopen the dev-client deep link, or `r` in Metro).
+
+## `@nextcloud/vue` 9: `NcButton type="tertiary"` silently loses its style (2026-11-21)
+
+In `@nextcloud/vue` 9, `NcButton`'s `type` prop is the native button type (`button`/`submit`/`reset`), and the look is set with `variant` (`primary`, `tertiary`, …). Older code using `type="tertiary"` / `type="primary"` still compiles and renders, but every such button gets the default `secondary` style, and "Create share link" lost its primary colour. All buttons in `src/App.vue` now use `variant`. Use `variant` for new buttons.

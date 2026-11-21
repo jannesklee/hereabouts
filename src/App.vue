@@ -2,80 +2,6 @@
 	<NcContent app-name="hereabouts">
 		<NcAppNavigation>
 			<template #list>
-				<template v-if="openGroup">
-					<!-- Group detail -->
-					<div class="ls-nav-section">
-						<button class="ls-back-link" @click="openGroupId = null">‹ Groups</button>
-					</div>
-					<div class="ls-nav-section">
-						<h3 class="ls-nav-heading">{{ openGroup.name }}</h3>
-						<p class="ls-share-expiry" style="margin-bottom:6px;">
-							{{ openGroup.visible ? "You're visible to this group." : "You're hidden from this group." }}
-							Showing only this group on the map.
-						</p>
-
-						<ul class="ls-member-list">
-							<li
-								v-for="member in openGroup.members"
-								:key="member.userId"
-								class="ls-member-item"
-								:class="{ 'ls-member-item--selected': member.userId === focusedUserId, 'ls-member-item--clickable': member.hasPosition }"
-								@click="toggleFocus(member)">
-								<img
-									v-if="member.avatarUrl"
-									class="ls-member-avatar"
-									:src="member.avatarUrl"
-									:alt="member.displayName" />
-								<span v-else class="ls-member-avatar ls-member-avatar--initial">
-									{{ member.displayName.charAt(0).toUpperCase() }}
-								</span>
-								<span class="ls-member-name">
-									{{ member.displayName }}
-									<span v-if="member.isMe"> (you)</span>
-								</span>
-								<span
-									class="ls-member-status"
-									:class="memberStatusClass(member)"
-									:title="memberStatusTitle(member)" />
-								<NcButton
-									v-if="openGroup.isOwner && !member.isMe"
-									type="tertiary"
-									aria-label="Remove member"
-									@click.stop="removeGroupMember(openGroup, member.userId)">
-									<template #icon>
-										<DeleteIcon :size="16" />
-									</template>
-								</NcButton>
-							</li>
-						</ul>
-
-						<div class="ls-share-url-row" style="margin-top:10px;">
-							<input
-								class="ls-invite-input"
-								readonly
-								:value="openGroup.inviteUrl"
-								@focus="$event.target.select()" />
-							<NcButton
-								type="tertiary"
-								:aria-label="copiedGroupId === openGroup.id ? 'Copied!' : 'Copy invite link'"
-								@click="copyGroupInvite(openGroup)">
-								<template #icon>
-									<CheckIcon v-if="copiedGroupId === openGroup.id" :size="18" />
-									<ContentCopyIcon v-else :size="18" />
-								</template>
-							</NcButton>
-						</div>
-
-						<button
-							v-if="openGroup.isOwner"
-							class="ls-delete-group-btn"
-							@click="deleteGroup(openGroup)">
-							Delete group
-						</button>
-					</div>
-				</template>
-
-				<template v-else>
 				<!-- Share location (Mode 2) -->
 				<div class="ls-nav-section">
 					<h3 class="ls-nav-heading">Share my location</h3>
@@ -90,7 +16,7 @@
 						</button>
 					</div>
 					<NcButton
-						type="primary"
+						variant="primary"
 						:disabled="creatingShare"
 						style="width:100%;margin-top:8px;"
 						@click="createShare">
@@ -110,7 +36,7 @@
 									:value="share.url"
 									@focus="$event.target.select()" />
 								<NcButton
-									type="tertiary"
+									variant="tertiary"
 									:aria-label="copiedId === share.id ? 'Copied!' : 'Copy link'"
 									@click="copyShare(share)">
 									<template #icon>
@@ -119,7 +45,7 @@
 									</template>
 								</NcButton>
 								<NcButton
-									type="tertiary"
+									variant="tertiary"
 									aria-label="Revoke link"
 									@click="revokeShare(share.id)">
 									<template #icon>
@@ -142,7 +68,10 @@
 					</p>
 
 					<div v-for="group in groups" :key="group.id" class="ls-group-overview-row">
-						<button class="ls-group-name-link" @click="openGroupId = group.id">
+						<button
+							class="ls-group-name-link"
+							:class="{ 'ls-group-name-link--active': group.id === openGroupId }"
+							@click="openGroupId = group.id">
 							{{ group.name }} <span class="ls-chevron">›</span>
 						</button>
 						<label class="ls-group-visible">
@@ -161,7 +90,7 @@
 							placeholder="Paste invite link to join"
 							@keyup.enter="joinGroup" />
 						<NcButton
-							type="tertiary"
+							variant="tertiary"
 							:disabled="joiningGroup || !joinInviteUrl.trim()"
 							@click="joinGroup">
 							Join
@@ -175,19 +104,190 @@
 							placeholder="New group name"
 							@keyup.enter="createGroup" />
 						<NcButton
-							type="tertiary"
+							variant="tertiary"
 							:disabled="creatingGroup || !newGroupName.trim()"
 							@click="createGroup">
 							+ Create
 						</NcButton>
 					</div>
 				</div>
-				</template>
 			</template>
 		</NcAppNavigation>
 
 		<NcAppContent>
-			<div id="ls-map-container" />
+			<div class="ls-map-wrap">
+				<div id="ls-map-container" />
+
+				<!-- Floating bar while a group is open: back, name, settings -->
+				<div v-if="openGroup" class="ls-map-topbar">
+					<NcButton variant="tertiary" aria-label="Back to all groups" @click="openGroupId = null">
+						<template #icon>
+							<ArrowLeftIcon :size="20" />
+						</template>
+					</NcButton>
+					<div class="ls-map-topbar-text">
+						<span class="ls-map-title">{{ openGroup.name }}</span>
+						<span class="ls-map-subtitle">{{ sharingSummary }}</span>
+					</div>
+					<NcButton variant="tertiary" aria-label="Group settings" @click="settingsOpen = true">
+						<template #icon>
+							<CogIcon :size="20" />
+						</template>
+					</NcButton>
+				</div>
+
+				<!-- Map buttons, above the member chips -->
+				<div v-if="positionedMembers.length" class="ls-map-buttons">
+					<button
+						type="button"
+						class="ls-map-btn ls-map-btn--zoom"
+						title="Zoom in"
+						aria-label="Zoom in"
+						@click="map.zoomIn()">
+						<PlusIcon :size="20" />
+					</button>
+					<button
+						type="button"
+						class="ls-map-btn ls-map-btn--zoom"
+						title="Zoom out"
+						aria-label="Zoom out"
+						@click="map.zoomOut()">
+						<MinusIcon :size="20" />
+					</button>
+					<button
+						type="button"
+						class="ls-map-btn"
+						title="Show everyone"
+						aria-label="Show everyone"
+						@click="showEveryone">
+						<ArrowExpandAllIcon :size="20" />
+					</button>
+					<button
+						v-if="me"
+						type="button"
+						class="ls-map-btn"
+						:class="{ 'ls-map-btn--active': focusedUserId === me.userId }"
+						title="Show me"
+						aria-label="Show me"
+						@click="toggleFocus(me)">
+						<CrosshairsGpsIcon :size="20" />
+					</button>
+				</div>
+
+				<span class="ls-map-attribution">
+					© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors
+				</span>
+
+				<!-- Member chips: click to follow someone, click again for everyone -->
+				<div v-if="sortedMapMembers.length" class="ls-map-chips">
+					<button
+						v-for="member in sortedMapMembers"
+						:key="member.userId"
+						type="button"
+						class="ls-chip"
+						:class="{ 'ls-chip--selected': member.userId === focusedUserId }"
+						:disabled="!member.hasPosition"
+						:title="member.hasPosition ? 'Show ' + member.displayName + ' on the map' : member.displayName + ' is not sharing'"
+						@click="toggleFocus(member)">
+						<img
+							v-if="member.avatarUrl"
+							class="ls-chip-avatar"
+							:class="{ 'ls-chip-avatar--idle': !member.hasPosition }"
+							:src="member.avatarUrl"
+							alt="">
+						<span
+							v-else
+							class="ls-chip-avatar ls-chip-avatar--initial"
+							:class="{ 'ls-chip-avatar--idle': !member.hasPosition }">
+							{{ member.displayName.charAt(0).toUpperCase() }}
+						</span>
+						<span class="ls-chip-text">
+							<span class="ls-chip-name">{{ member.isMe ? 'You' : member.displayName.split(' ')[0] }}</span>
+							<span class="ls-chip-time">{{ lastSeenLabel(member) }}</span>
+						</span>
+					</button>
+				</div>
+			</div>
+
+			<!-- Group settings -->
+			<NcModal
+				v-if="settingsOpen && openGroup"
+				name="Group settings"
+				size="small"
+				@close="settingsOpen = false">
+				<div class="ls-settings">
+					<h2 class="ls-settings-title">
+						{{ openGroup.name }}
+					</h2>
+
+					<NcCheckboxRadioSwitch
+						type="switch"
+						:model-value="openGroup.visible"
+						@update:model-value="toggleGroupVisibility(openGroup)">
+						Share my location here
+					</NcCheckboxRadioSwitch>
+
+					<h3 class="ls-nav-heading ls-settings-heading">
+						Invite link
+					</h3>
+					<div class="ls-share-url-row">
+						<input
+							class="ls-invite-input"
+							readonly
+							:value="openGroup.inviteUrl"
+							@focus="$event.target.select()">
+						<NcButton
+							variant="tertiary"
+							:aria-label="copiedGroupId === openGroup.id ? 'Copied!' : 'Copy invite link'"
+							@click="copyGroupInvite(openGroup)">
+							<template #icon>
+								<CheckIcon v-if="copiedGroupId === openGroup.id" :size="18" />
+								<ContentCopyIcon v-else :size="18" />
+							</template>
+						</NcButton>
+					</div>
+
+					<h3 class="ls-nav-heading ls-settings-heading">
+						Members
+					</h3>
+					<ul class="ls-member-list">
+						<li v-for="member in openGroup.members" :key="member.userId" class="ls-member-item">
+							<img
+								v-if="member.avatarUrl"
+								class="ls-member-avatar"
+								:src="member.avatarUrl"
+								:alt="member.displayName">
+							<span v-else class="ls-member-avatar ls-member-avatar--initial">
+								{{ member.displayName.charAt(0).toUpperCase() }}
+							</span>
+							<span class="ls-member-name">
+								{{ member.displayName }}
+								<span v-if="member.isMe"> (you)</span>
+							</span>
+							<span
+								class="ls-member-status"
+								:class="memberStatusClass(member)"
+								:title="memberStatusTitle(member)" />
+							<NcButton
+								v-if="openGroup.isOwner && !member.isMe"
+								variant="tertiary"
+								aria-label="Remove member"
+								@click="removeGroupMember(openGroup, member.userId)">
+								<template #icon>
+									<DeleteIcon :size="16" />
+								</template>
+							</NcButton>
+						</li>
+					</ul>
+
+					<button
+						v-if="openGroup.isOwner"
+						class="ls-delete-group-btn"
+						@click="deleteGroup(openGroup)">
+						Delete group
+					</button>
+				</div>
+			</NcModal>
 		</NcAppContent>
 	</NcContent>
 </template>
@@ -197,16 +297,46 @@ import maplibregl from 'maplibre-gl'
 import { loadState } from '@nextcloud/initial-state'
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
-import { NcContent, NcAppNavigation, NcAppContent, NcButton } from '@nextcloud/vue'
+import { emit } from '@nextcloud/event-bus'
+import {
+	NcContent,
+	NcAppNavigation,
+	NcAppContent,
+	NcButton,
+	NcCheckboxRadioSwitch,
+	NcModal,
+} from '@nextcloud/vue'
+import ArrowExpandAllIcon from 'vue-material-design-icons/ArrowExpandAll.vue'
+import ArrowLeftIcon from 'vue-material-design-icons/ArrowLeft.vue'
 import CheckIcon from 'vue-material-design-icons/Check.vue'
+import CogIcon from 'vue-material-design-icons/Cog.vue'
 import ContentCopyIcon from 'vue-material-design-icons/ContentCopy.vue'
+import CrosshairsGpsIcon from 'vue-material-design-icons/CrosshairsGps.vue'
 import DeleteIcon from 'vue-material-design-icons/Delete.vue'
+import MinusIcon from 'vue-material-design-icons/Minus.vue'
+import PlusIcon from 'vue-material-design-icons/Plus.vue'
 import { isStale } from './utils/stale.js'
 
 export default {
 	name: 'HereaboutsApp',
 
-	components: { NcContent, NcAppNavigation, NcAppContent, NcButton, CheckIcon, ContentCopyIcon, DeleteIcon },
+	components: {
+		NcContent,
+		NcAppNavigation,
+		NcAppContent,
+		NcButton,
+		NcCheckboxRadioSwitch,
+		NcModal,
+		ArrowExpandAllIcon,
+		ArrowLeftIcon,
+		CheckIcon,
+		CogIcon,
+		ContentCopyIcon,
+		CrosshairsGpsIcon,
+		DeleteIcon,
+		MinusIcon,
+		PlusIcon,
+	},
 
 	data() {
 		return {
@@ -222,10 +352,13 @@ export default {
 			// which single group (if any) is currently narrowing the map.
 			memberGroupsByUser: {},
 			nowTs: Math.floor(Date.now() / 1000),
-			// Set by clicking a member in the sidebar list or their marker's
-			// popup - centers the map on just them instead of fitting everyone
-			// in frame, and keeps following them across polls until toggled off.
+			// Set by clicking a member chip or marker - flies to them and keeps
+			// following them across polls until toggled off.
 			focusedUserId: null,
+			// The map frames everyone once when positions first arrive; after
+			// that it only moves when asked (or to follow focusedUserId).
+			didInitialFit: false,
+			settingsOpen: false,
 			statusInterval: null,
 			lastPosition: null,
 			wakeLock: null,
@@ -249,6 +382,8 @@ export default {
 		this.$nextTick(() => {
 			this.map = new maplibregl.Map({
 				container: 'ls-map-container',
+				// Shown as our own overlay, above the member chips
+				attributionControl: false,
 				style: {
 					version: 8,
 					sources: {
@@ -507,29 +642,85 @@ export default {
 				}
 			}
 
-			this.applyMapView(members)
-		},
-
-		// Toggling a member focuses the map on them (and keeps following their
-		// position on every subsequent poll) until they're clicked again or the
-		// open group changes. Ignored for members with no position - there's
-		// nowhere to focus to.
-		toggleFocus(member) {
-			if (!member.hasPosition) return
-			this.focusedUserId = this.focusedUserId === member.userId ? null : member.userId
-			this.applyMapView(this.mapMembers)
-		},
-
-		applyMapView(members) {
-			const positioned = members.filter((m) => m.hasPosition)
-			if (this.focusedUserId) {
-				const focused = positioned.find((m) => m.userId === this.focusedUserId)
-				if (focused) {
-					this.map.flyTo({ center: [focused.lon, focused.lat], zoom: 15 })
-					return
-				}
+			if (!this.didInitialFit && seen.size > 0) {
+				this.didInitialFit = true
+				this.fitEveryone(false)
+			} else {
+				this.followFocused()
 			}
-			this.fitBounds(positioned)
+		},
+
+		// Room taken by the overlays (top bar, member chips, map buttons), so
+		// fitted or followed markers don't end up underneath them.
+		mapPadding() {
+			return { top: this.openGroup ? 80 : 24, bottom: 96, left: 32, right: 72 }
+		},
+
+		// Zoom out to show everyone on the map (all groups, or the open one).
+		fitEveryone(animate = true) {
+			const positioned = this.positionedMembers
+			if (!this.map || positioned.length === 0) return
+			const bounds = new maplibregl.LngLatBounds()
+			positioned.forEach((m) => bounds.extend([m.lon, m.lat]))
+			this.map.fitBounds(bounds, {
+				padding: this.mapPadding(),
+				maxZoom: 15,
+				duration: animate ? 800 : 0,
+			})
+		},
+
+		showEveryone() {
+			this.focusedUserId = null
+			this.refreshFocusClasses()
+			this.fitEveryone()
+		},
+
+		// Clicking a member's chip or marker follows them (see followFocused);
+		// clicking them again goes back to everyone. Ignored for members with
+		// no position - there's nowhere to go.
+		toggleFocus(clicked) {
+			// Marker click handlers hold the member object from when the marker
+			// was created, so look up the current position.
+			const member = this.positionedMembers.find((m) => m.userId === clicked.userId)
+			if (!member) return
+			if (this.focusedUserId === member.userId) {
+				this.showEveryone()
+				return
+			}
+			this.focusedUserId = member.userId
+			this.refreshFocusClasses()
+			this.map.flyTo({
+				center: [member.lon, member.lat],
+				zoom: Math.max(this.map.getZoom(), 15),
+				padding: this.mapPadding(),
+			})
+		},
+
+		// Keep the followed member centred as their position updates.
+		followFocused() {
+			if (!this.focusedUserId) return
+			const focused = this.positionedMembers.find((m) => m.userId === this.focusedUserId)
+			if (!focused) {
+				this.focusedUserId = null
+				this.refreshFocusClasses()
+				return
+			}
+			this.map.easeTo({ center: [focused.lon, focused.lat], padding: this.mapPadding(), duration: 600 })
+		},
+
+		refreshFocusClasses() {
+			for (const [userId, marker] of Object.entries(this.markers)) {
+				marker.getElement().classList.toggle('ls-marker--focused', userId === this.focusedUserId)
+			}
+		},
+
+		lastSeenLabel(member) {
+			if (!member.hasPosition) return 'Not sharing'
+			if (!member.updatedAt) return ''
+			const age = this.nowTs - member.updatedAt
+			if (age < 60) return 'Just now'
+			if (age < 3600) return `${Math.floor(age / 60)} min ago`
+			return `${Math.floor(age / 3600)}h ago`
 		},
 
 		memberStatusClass(member) {
@@ -640,17 +831,6 @@ export default {
 			return wrap
 		},
 
-		fitBounds(members) {
-			if (members.length === 0) return
-			if (members.length === 1) {
-				this.map.flyTo({ center: [members[0].lon, members[0].lat], zoom: 13 })
-				return
-			}
-			const bounds = new maplibregl.LngLatBounds()
-			members.forEach((m) => bounds.extend([m.lon, m.lat]))
-			this.map.fitBounds(bounds, { padding: 60, maxZoom: 15 })
-		},
-
 		async fetchShares() {
 			try {
 				const { data } = await axios.get(generateUrl('/apps/hereabouts/shares'))
@@ -715,6 +895,28 @@ export default {
 			return this.openGroup ? this.openGroup.members : this.members
 		},
 
+		positionedMembers() {
+			return this.mapMembers.filter((m) => m.hasPosition && m.lat !== null && m.lon !== null)
+		},
+
+		me() {
+			return this.positionedMembers.find((m) => m.isMe) || null
+		},
+
+		// You first, then people who are sharing, then the rest.
+		sortedMapMembers() {
+			return [...this.mapMembers].sort((a, b) =>
+				Number(b.isMe) - Number(a.isMe)
+				|| Number(b.hasPosition) - Number(a.hasPosition)
+				|| a.displayName.localeCompare(b.displayName))
+		},
+
+		sharingSummary() {
+			const members = this.openGroup ? this.openGroup.members : []
+			const sharing = members.filter((m) => m.hasPosition).length
+			return sharing === 0 ? 'Nobody sharing right now' : `${sharing} of ${members.length} sharing`
+		},
+
 		durationOptions() {
 			return [
 				{ minutes: 15, label: '15 min' },
@@ -726,11 +928,16 @@ export default {
 	},
 
 	watch: {
-		// Re-render markers immediately when switching in/out of a group's
-		// detail view, instead of waiting for the next 15s poll.
-		openGroupId() {
+		// Opening a group gives its map the whole content area: the sidebar
+		// (a drawer covering the map on phones) closes and comes back when
+		// leaving the group. Markers and framing switch right away instead of
+		// waiting for the next 15s poll.
+		openGroupId(id) {
 			this.focusedUserId = null
+			this.settingsOpen = false
+			emit('toggle-navigation', { open: id === null })
 			this.updateMarkers(this.mapMembers)
+			this.fitEveryone()
 		},
 	},
 }
@@ -744,9 +951,221 @@ export default {
 	height: 100%;
 }
 
+/* Map with floating overlays (top bar, buttons, member chips) */
+.ls-map-wrap {
+	position: relative;
+	width: 100%;
+	height: 100%;
+}
+
 #ls-map-container {
 	width: 100%;
 	height: 100%;
+}
+
+.ls-map-topbar,
+.ls-map-btn,
+.ls-map-chips {
+	background: var(--color-main-background, #fff);
+	box-shadow: 0 2px 8px var(--color-box-shadow, rgba(0, 0, 0, .25));
+}
+
+.ls-map-topbar {
+	position: absolute;
+	top: 8px;
+	/* Leave room for Nextcloud's sidebar toggle in the top-left corner */
+	left: calc(var(--app-navigation-padding, 8px) * 2 + var(--default-clickable-area, 34px));
+	right: 12px;
+	max-width: 480px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px;
+	border-radius: var(--border-radius-pill, 24px);
+	z-index: 2;
+}
+
+.ls-map-topbar-text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	line-height: 1.25;
+}
+
+.ls-map-title {
+	font-weight: 600;
+	font-size: 15px;
+	color: var(--color-main-text, #222);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ls-map-subtitle {
+	font-size: 12px;
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+.ls-map-buttons {
+	position: absolute;
+	right: 12px;
+	bottom: 96px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	z-index: 2;
+}
+
+.ls-map-btn {
+	width: 44px;
+	height: 44px;
+	min-height: 44px;
+	margin: 0;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--color-main-text, #222);
+	cursor: pointer;
+}
+
+.ls-map-btn:hover {
+	background: var(--color-background-hover, #f5f5f5);
+}
+
+.ls-map-btn--active {
+	color: var(--color-primary-element, #0082c9);
+}
+
+/* Touch screens zoom with pinch / double tap */
+@media (pointer: coarse) {
+	.ls-map-btn--zoom {
+		display: none;
+	}
+}
+
+.ls-map-attribution {
+	position: absolute;
+	right: 12px;
+	bottom: 80px;
+	z-index: 1;
+	font-size: 10px;
+	padding: 0 4px;
+	border-radius: 3px;
+	background: rgba(255, 255, 255, .7);
+	color: #333;
+}
+
+.ls-map-attribution a {
+	color: inherit;
+	text-decoration: underline;
+}
+
+.ls-map-chips {
+	position: absolute;
+	left: 12px;
+	bottom: 12px;
+	width: fit-content;
+	max-width: calc(100% - 24px);
+	display: flex;
+	gap: 8px;
+	padding: 8px;
+	overflow-x: auto;
+	border-radius: var(--border-radius-container-large, 16px);
+	z-index: 2;
+}
+
+.ls-chip {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	min-height: 0;
+	padding: 4px 14px 4px 4px;
+	border: 2px solid transparent;
+	border-radius: var(--border-radius-pill, 24px);
+	background: var(--color-background-dark, #f3f4f6);
+	color: var(--color-main-text, #222);
+	cursor: pointer;
+	max-width: 200px;
+}
+
+.ls-chip:hover:not(:disabled) {
+	background: var(--color-background-darker, #e5e7eb);
+}
+
+.ls-chip:disabled {
+	cursor: default;
+	opacity: 1;
+}
+
+.ls-chip--selected {
+	border-color: #f59e0b;
+	background: var(--color-primary-element-light, #e6f3fa);
+}
+
+.ls-chip-avatar {
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	object-fit: cover;
+}
+
+.ls-chip-avatar--initial {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--color-primary, #0082c9);
+	color: #fff;
+	font-weight: 600;
+	font-size: 15px;
+}
+
+.ls-chip-avatar--idle {
+	filter: grayscale(100%);
+	opacity: .5;
+}
+
+.ls-chip-text {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+	line-height: 1.2;
+}
+
+.ls-chip-name {
+	font-weight: 600;
+	font-size: 14px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 140px;
+}
+
+.ls-chip-time {
+	font-size: 11px;
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+/* Group settings dialog */
+.ls-settings {
+	padding: 20px;
+}
+
+.ls-settings-title {
+	font-size: 18px;
+	font-weight: 600;
+	margin: 0 0 12px;
+}
+
+.ls-settings-heading {
+	margin-top: 18px;
 }
 
 /* Sidebar sections */
@@ -870,14 +1289,8 @@ export default {
 	color: var(--color-text-maxcontrast, #767676);
 }
 
-.ls-back-link {
-	background: none;
-	border: none;
-	padding: 0;
-	font-size: 13px;
-	font-weight: 600;
-	color: var(--color-primary, #0082c9);
-	cursor: pointer;
+.ls-group-name-link--active {
+	color: var(--color-primary-element, #0082c9);
 }
 
 .ls-delete-group-btn {
@@ -925,14 +1338,6 @@ export default {
 	border-radius: var(--border-radius-element, 8px);
 	padding: 2px 6px;
 	margin: 0 -6px;
-}
-
-.ls-member-item--clickable {
-	cursor: pointer;
-}
-
-.ls-member-item--selected {
-	background: var(--color-primary-light, #e0eefb);
 }
 
 .ls-member-avatar {
@@ -1088,6 +1493,8 @@ export default {
 }
 
 .ls-marker--focused {
+	/* On top when people are in the same place (e.g. a family at home) */
+	z-index: 2;
 	border-color: #f59e0b;
 	border-width: 3px;
 	width: 42px;
