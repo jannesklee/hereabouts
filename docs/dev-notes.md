@@ -146,3 +146,15 @@ occ config:system:set apps_paths --type=json --value='[{"path":"/var/www/nextclo
 The same applies to any other nested system-config value that Nextcloud only accepts as a whole: set it with `--type=json`, not key by key.
 
 Also: on a normal (archive) install, **no `apps_paths` is the default** and every app, shipped or from the App Store, lives in `apps/`. The `apps` + `custom_apps` split comes from the official Docker image (and our `docker-compose.dev.yml`). There's no reason to add it to a bare-metal test server; the test instance went back to the default and uses `apps/hereabouts`.
+
+## Companion: `CI=1` turns off Metro's file watching
+
+Starting the companion with `CI=1 npx expo run:android` (or `expo start`) makes Expo run Metro in CI mode: the log says `Metro is running in CI mode, reloads are disabled. Remove CI=true to enable watch mode.` Edits never reach the app, and **new files can't be resolved at all** (`Unable to resolve module ./newFile`), because Metro only knows the files it found at startup. Start Metro without `CI` (`env -u CI npx expo start --dev-client`) and reload the app.
+
+## Companion: POSTs fail with 405 on servers without pretty URLs (2026-11-21)
+
+**Symptom:** on the NC 35 test server, the companion logged in and listed groups fine, but every `sendPosition` / `createShare` failed with `405 Method Not Allowed`.
+
+**Cause:** the companion built URLs as `{server}/apps/hereabouts/...`, without `/index.php`. On an Apache server without pretty URLs (no `htaccess.RewriteBase`), such a URL is not a file, so Apache serves its `ErrorDocument 404`, which points into `index.php`. Nextcloud then routes the original path, so it *seems* to work, but Apache always makes error-document requests a GET. GET routes work; POST routes arrive as GET and the router answers 405. Proof: without `/index.php`, a POST to the GET-only `/api/groups` gets 401 (accepted as GET); with `/index.php`, the same POST gets 405. The Docker dev container has pretty URLs on, so it never showed up there.
+
+**Fix:** `companion/src/api.ts` builds every URL with `appUrl()`, which always inserts `/index.php/apps/hereabouts`. That works on every server. `parseInviteUrl` now keeps a subpath (`https://example.com/nextcloud`) and drops `index.php`, which `appUrl()` adds back. The web frontend isn't affected: `generateUrl()` adds `index.php` itself when needed. Any future client code that builds Nextcloud URLs by hand must include `/index.php` too.

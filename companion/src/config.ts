@@ -79,8 +79,13 @@ export function parseInviteUrl(
     const parts = u.pathname.split('/').filter(Boolean);
     const joinIdx = parts.indexOf('join');
     if (joinIdx < 0 || joinIdx + 1 >= parts.length) return null;
+    // Keep the path Nextcloud is installed under (https://example.com/nextcloud)
+    // and drop index.php, which api.ts adds back to every request.
+    let prefix = parts.slice(0, joinIdx);
+    if (prefix.slice(-2).join('/') === 'apps/hereabouts') prefix = prefix.slice(0, -2);
+    if (prefix[prefix.length - 1] === 'index.php') prefix = prefix.slice(0, -1);
     return {
-      server: `${u.protocol}//${u.host}`,
+      server: [`${u.protocol}//${u.host}`, ...prefix].join('/'),
       token: parts[joinIdx + 1],
     };
   } catch {

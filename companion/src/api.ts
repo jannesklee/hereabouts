@@ -37,8 +37,15 @@ interface GroupsResponse {
   groups: Group[];
 }
 
+// Always go through index.php. Without it the URL only works on servers that
+// have pretty URLs set up; on the others Apache reaches Nextcloud via its 404
+// error page, which turns every request into a GET, so all POSTs fail with 405.
+function appUrl(server: string, path: string): string {
+  return `${normalizeUrl(server).replace(/\/index\.php$/, '')}/index.php/apps/hereabouts${path}`;
+}
+
 function url(config: AppConfig, path: string): string {
-  return `${normalizeUrl(config.serverUrl)}/apps/hereabouts${path}`;
+  return appUrl(config.serverUrl, path);
 }
 
 function headers(config: AppConfig): HeadersInit {
@@ -95,7 +102,7 @@ export async function sendGuestPosition(
   heading: number | null,
 ): Promise<boolean> {
   try {
-    const endpoint = `${normalizeUrl(link.server)}/apps/hereabouts/guest/${link.token}`;
+    const endpoint = appUrl(link.server, `/guest/${link.token}`);
     const body = {
       name: link.name,
       lat,
@@ -128,7 +135,7 @@ export async function fetchGroupInfo(
 ): Promise<{ name: string; ownerDisplayName: string } | null> {
   try {
     const res = await fetch(
-      `${normalizeUrl(server)}/apps/hereabouts/join/${token}/info`,
+      appUrl(server, `/join/${token}/info`),
       { headers: guestHeaders },
     );
     if (!res.ok) return null;
@@ -147,7 +154,7 @@ export async function fetchGuestPositions(link: GuestLink): Promise<Member[]> {
   try {
     const params = new URLSearchParams({ name: link.name });
     const res = await fetch(
-      `${normalizeUrl(link.server)}/apps/hereabouts/guest/${link.token}/positions?${params}`,
+      appUrl(link.server, `/guest/${link.token}/positions?${params}`),
       { headers: guestHeaders },
     );
     if (!res.ok) {
@@ -165,7 +172,7 @@ export async function stopGuestLink(link: GuestLink): Promise<void> {
   try {
     const params = new URLSearchParams({ name: link.name, stop: '1' });
     await fetch(
-      `${normalizeUrl(link.server)}/apps/hereabouts/guest/${link.token}?${params}`,
+      appUrl(link.server, `/guest/${link.token}?${params}`),
       { method: 'POST', headers: guestHeaders },
     );
   } catch (e) {
@@ -285,7 +292,7 @@ export async function fetchMembers(
 ): Promise<Member[]> {
   try {
     const res = await fetch(
-      `${normalizeUrl(config.serverUrl)}/apps/hereabouts/group/${groupId}/positions`,
+      url(config, `/group/${groupId}/positions`),
       { headers: headers(config) },
     );
     if (!res.ok) {
