@@ -92,6 +92,14 @@ const guestHeaders: HeadersInit = {
 
 // Guest mode - one call per joined group, since each carries its own
 // server/token/name and is otherwise independent of the others.
+/**
+ * 'removed': the group owner removed this guest; 'gone': the group was
+ * deleted. Both are final, so the caller stops sending for this link.
+ * 'failed' is anything that may work again later (no connection, server
+ * down or in maintenance mode).
+ */
+export type GuestSendResult = 'ok' | 'removed' | 'gone' | 'failed';
+
 export async function sendGuestPosition(
   link: GuestLink,
   lat: number,
@@ -100,7 +108,7 @@ export async function sendGuestPosition(
   alt: number | null,
   speed: number | null,
   heading: number | null,
-): Promise<boolean> {
+): Promise<GuestSendResult> {
   try {
     const endpoint = appUrl(link.server, `/guest/${link.token}`);
     const body = {
@@ -113,17 +121,24 @@ export async function sendGuestPosition(
       bearing: heading,
       timestamp: Math.floor(Date.now() / 1000),
       ...(link.duration > 0 ? { duration: link.duration } : {}),
+      ...(link.rejoin ? { rejoin: true } : {}),
     };
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: guestHeaders,
       body: JSON.stringify(body),
     });
-    if (!res.ok) console.error('[Hereabouts] sendGuestPosition failed:', res.status, endpoint);
-    return res.ok;
+    if (res.ok) return 'ok';
+    // Only the app's own JSON answers count as final: a plain 404 page (e.g.
+    // the app disabled on the server for a moment) must not end the link.
+    const data = await res.json().catch(() => null);
+    if (res.status === 403 && data?.error === 'removed') return 'removed';
+    if (res.status === 404 && data?.error === 'not_found') return 'gone';
+    console.error('[Hereabouts] sendGuestPosition failed:', res.status, endpoint);
+    return 'failed';
   } catch (e) {
     console.error('[Hereabouts] sendGuestPosition error:', e);
-    return false;
+    return 'failed';
   }
 }
 

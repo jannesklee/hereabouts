@@ -19,6 +19,7 @@
 
 ### Fixed
 - The group owner can now remove guests (the remove button did nothing for them); a removed guest's open page stops sharing
+- Companion app as a guest: when the owner removes you or deletes the group, the app stops sending there, says so in the group list, and stops location updates if nothing else is shared (it used to keep sending every 5 s)
 
 ## 0.1.0 – 2026-03-20
 

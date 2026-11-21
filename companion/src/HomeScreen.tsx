@@ -17,7 +17,14 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import { type AppConfig, type GuestLink, normalizeUrl, parseInviteUrl, saveConfig } from './config';
+import {
+  type AppConfig,
+  type GuestLink,
+  normalizeUrl,
+  onStoredConfigChange,
+  parseInviteUrl,
+  saveConfig,
+} from './config';
 import {
   fetchGroups,
   fetchMembers,
@@ -127,7 +134,8 @@ export default function HomeScreen({
     setOpenGuestToken(null);
 
     if (config.mode === 'guest') {
-      if (config.guestLinks.some((l) => l.token === parsed.token)) {
+      // An ended link (removed, group deleted) gets the join form instead
+      if (config.guestLinks.some((l) => l.token === parsed.token && !l.ended)) {
         setOpenGuestToken(parsed.token);
         return;
       }
@@ -220,13 +228,31 @@ export default function HomeScreen({
     };
   }, []);
 
-  const guestLinksKey = config.guestLinks.map((l) => `${l.server}|${l.token}|${l.name}`).join(',');
+  // The background task switches off guest links the server ended (the owner
+  // removed this guest, or deleted the group), and stops location updates
+  // when none is left.
+  useEffect(
+    () =>
+      onStoredConfigChange((updated) => {
+        onConfigChange(updated);
+        if (updated.mode === 'guest' && !updated.guestLinks.some((l) => l.enabled)) {
+          setSharing(false);
+        }
+      }),
+    [onConfigChange],
+  );
+
+  const guestLinksKey = config.guestLinks
+    .map((l) => `${l.server}|${l.token}|${l.name}|${l.ended ?? ''}`)
+    .join(',');
   useEffect(() => {
     if (config.mode !== 'guest') return;
     let cancelled = false;
     async function loadGuestMembers() {
       const entries = await Promise.all(
-        config.guestLinks.map(async (l) => [l.token, await fetchGuestPositions(l)] as const),
+        config.guestLinks
+          .filter((l) => !l.ended)
+          .map(async (l) => [l.token, await fetchGuestPositions(l)] as const),
       );
       if (!cancelled) setGuestMembers(Object.fromEntries(entries));
     }
@@ -317,7 +343,8 @@ export default function HomeScreen({
     }
     const name = newGuestName.trim();
     if (!name) return;
-    if (config.guestLinks.some((l) => l.token === parsed.token)) {
+    const existing = config.guestLinks.find((l) => l.token === parsed.token);
+    if (existing && !existing.ended) {
       Alert.alert('Already joined', "You're already sharing to this group.");
       return;
     }
@@ -335,8 +362,14 @@ export default function HomeScreen({
       groupName: info?.name,
       duration: newGuestDuration,
       enabled: true,
+      // Joining again on purpose after the owner removed you, like the web
+      // join form: the server lets you back in
+      ...(existing?.ended === 'removed' ? { rejoin: true } : {}),
     };
-    await persistGuestLinks([...config.guestLinks, link]);
+    await persistGuestLinks([
+      ...config.guestLinks.filter((l) => l.token !== parsed.token),
+      link,
+    ]);
     setNewGuestUrl('');
     setNewGuestName('');
   }
@@ -360,6 +393,11 @@ export default function HomeScreen({
   }
 
   function handleRemoveGuestLink(link: GuestLink) {
+    // Already not sharing there: just take it off the list
+    if (link.ended) {
+      persistGuestLinks(config.guestLinks.filter((l) => l.token !== link.token));
+      return;
+    }
     Alert.alert(
       'Leave group',
       `Stop sharing your location to "${link.name}"?`,
@@ -542,7 +580,13 @@ export default function HomeScreen({
   }
 
   const openGroup = groups.find((g) => g.id === openGroupId) ?? null;
-  const openGuestLink = config.guestLinks.find((l) => l.token === openGuestToken) ?? null;
+  // Closes the map by itself when the owner removes you while it's open
+  const openGuestLink =
+    config.guestLinks.find((l) => l.token === openGuestToken && !l.ended) ?? null;
+  const guestLinkCounts = {
+    enabled: config.guestLinks.filter((l) => l.enabled).length,
+    joined: config.guestLinks.filter((l) => !l.ended).length,
+  };
 
   if (openGroup) {
     return (
@@ -621,7 +665,7 @@ export default function HomeScreen({
               <Text style={styles.sharingSubtitle}>
                 {config.mode === 'guest'
                   ? sharing
-                    ? `Sharing to ${config.guestLinks.filter((l) => l.enabled).length} of ${config.guestLinks.length} group${config.guestLinks.length === 1 ? '' : 's'}, updating every ~5 s`
+                    ? `Sharing to ${guestLinkCounts.enabled} of ${guestLinkCounts.joined} group${guestLinkCounts.joined === 1 ? '' : 's'}, updating every ~5 s`
                     : 'Join a group below to start sharing'
                   : sharing
                   ? 'Visible via an active group or share link'
@@ -650,12 +694,19 @@ export default function HomeScreen({
               <GroupRow
                 key={link.token}
                 title={link.groupName || 'Unnamed group'}
-                members={guestMembers[link.token] ?? null}
+                members={link.ended ? [] : (guestMembers[link.token] ?? null)}
                 shareLabel={`Share my location as ${link.name}`}
                 shareValue={link.enabled}
                 onShareChange={() => handleToggleGuestLink(link)}
                 onOpen={() => setOpenGuestToken(link.token)}
                 onLeave={() => handleRemoveGuestLink(link)}
+                endedNote={
+                  link.ended === 'removed'
+                    ? 'The group owner removed you'
+                    : link.ended === 'gone'
+                    ? 'This group was deleted'
+                    : undefined
+                }
                 bordered={i > 0}
               />
             ))}
@@ -1024,6 +1075,7 @@ function GroupRow({
   onOpen,
   onInvite,
   onLeave,
+  endedNote,
   bordered,
 }: {
   title: string;
@@ -1034,8 +1086,12 @@ function GroupRow({
   onOpen: () => void;
   onInvite?: () => void;
   onLeave?: () => void;
+  // Guest link the server ended ("The group owner removed you"): no map, no
+  // switch, just the note and ✕ to take it off the list
+  endedNote?: string;
   bordered: boolean;
 }) {
+  const ended = endedNote !== undefined;
   return (
     <View style={[styles.groupBlock, bordered && styles.groupBlockBorder]}>
       {/* The invite button sits outside the Pressable: TalkBack treats a
@@ -1043,28 +1099,31 @@ function GroupRow({
       <View style={styles.groupTop}>
         <Pressable
           onPress={onOpen}
-          android_ripple={{ color: '#dbeafe' }}
+          disabled={ended}
+          android_ripple={ended ? undefined : { color: '#dbeafe' }}
           style={({ pressed }) => [
             styles.groupMain,
             onInvite && styles.groupMainWithInvite,
             pressed && styles.groupMainPressed,
           ]}
-          accessibilityRole="button"
-          accessibilityLabel={`Open the map of ${title}`}
+          accessibilityRole={ended ? undefined : 'button'}
+          accessibilityLabel={ended ? `${title}: ${endedNote}` : `Open the map of ${title}`}
         >
           <AvatarStack members={members ?? []} />
           <View style={styles.groupText}>
             <Text style={styles.groupName} numberOfLines={1}>
               {title}
             </Text>
-            <Text style={styles.groupStatus} numberOfLines={1}>
-              {groupStatus(members)}
+            <Text style={[styles.groupStatus, ended && styles.groupStatusEnded]} numberOfLines={1}>
+              {ended ? endedNote : groupStatus(members)}
             </Text>
           </View>
-          <View style={styles.mapPill}>
-            <MaterialIcons name="map" size={16} color={PRIMARY} />
-            <Text style={styles.mapPillText}>Map</Text>
-          </View>
+          {!ended && (
+            <View style={styles.mapPill}>
+              <MaterialIcons name="map" size={16} color={PRIMARY} />
+              <Text style={styles.mapPillText}>Map</Text>
+            </View>
+          )}
         </Pressable>
         {onInvite && (
           <TouchableOpacity
@@ -1079,19 +1138,21 @@ function GroupRow({
       </View>
       <View style={styles.groupShareRow}>
         <Text style={styles.groupShareLabel} numberOfLines={1}>
-          {shareLabel}
+          {ended ? 'Your location is no longer shared here' : shareLabel}
         </Text>
-        <Switch
-          value={shareValue}
-          onValueChange={onShareChange}
-          trackColor={{ true: PRIMARY, false: '#d1d5db' }}
-          thumbColor="#fff"
-        />
+        {!ended && (
+          <Switch
+            value={shareValue}
+            onValueChange={onShareChange}
+            trackColor={{ true: PRIMARY, false: '#d1d5db' }}
+            thumbColor="#fff"
+          />
+        )}
         {onLeave && (
           <TouchableOpacity
             style={styles.memberRemoveBtn}
             onPress={onLeave}
-            accessibilityLabel={`Leave ${title}`}
+            accessibilityLabel={ended ? `Remove ${title} from the list` : `Leave ${title}`}
           >
             <MaterialIcons name="close" size={20} color={DANGER} />
           </TouchableOpacity>
@@ -1353,6 +1414,7 @@ const styles = StyleSheet.create({
   groupText: { flex: 1, minWidth: 0 },
   groupName: { fontSize: 15, fontWeight: '600', color: '#111' },
   groupStatus: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  groupStatusEnded: { color: DANGER, fontWeight: '600' },
   mapPill: {
     flexDirection: 'row',
     alignItems: 'center',

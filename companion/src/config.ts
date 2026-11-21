@@ -17,6 +17,14 @@ export interface GuestLink {
   groupName?: string;
   duration: number; // minutes; 0 = no expiry
   enabled: boolean;
+  // Set by the background task when the server refuses this link: the group
+  // owner removed this guest ('removed') or deleted the group ('gone'). The
+  // link stays in the list, switched off, so the app can say what happened,
+  // until the user takes it off the list or joins again.
+  ended?: 'removed' | 'gone';
+  // Joined again after being removed: updates ask the server to lift the
+  // removal (rejoin=1, like the web join form) until one is accepted.
+  rejoin?: boolean;
 }
 
 export interface AppConfig {
@@ -59,6 +67,33 @@ export async function saveConfig(
   const config: AppConfig = { ...c, isValid: isValid(c) };
   await SecureStore.setItemAsync(CONFIG_KEY, JSON.stringify(config));
   return config;
+}
+
+// The background location task changes the stored config too (guest links
+// the server ended). The open app listens, so its copy doesn't go stale.
+type ConfigListener = (config: AppConfig) => void;
+const configListeners = new Set<ConfigListener>();
+
+export function onStoredConfigChange(listener: ConfigListener): () => void {
+  configListeners.add(listener);
+  return () => {
+    configListeners.delete(listener);
+  };
+}
+
+/**
+ * Changes the stored guest links from outside the app's screens (the
+ * background task). Reads the config fresh, so changes the app saved in the
+ * meantime aren't lost, and tells the open app.
+ */
+export async function updateStoredGuestLinks(
+  change: (links: GuestLink[]) => GuestLink[],
+): Promise<AppConfig | null> {
+  const current = await loadConfig();
+  if (!current) return null;
+  const updated = await saveConfig({ ...current, guestLinks: change(current.guestLinks) });
+  configListeners.forEach((listener) => listener(updated));
+  return updated;
 }
 
 export function basicAuthHeader(config: AppConfig): string {
