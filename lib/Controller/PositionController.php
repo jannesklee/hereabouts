@@ -7,6 +7,7 @@ use OCA\Hereabouts\Db\GuestMapper;
 use OCA\Hereabouts\Db\GroupMapper;
 use OCA\Hereabouts\Db\Position;
 use OCA\Hereabouts\Db\PositionMapper;
+use OCA\Hereabouts\Notification\JoinNotifications;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
@@ -24,6 +25,7 @@ class PositionController extends Controller {
 		private PositionMapper $positionMapper,
 		private GuestMapper $guestMapper,
 		private GroupMapper $groupMapper,
+		private JoinNotifications $joinNotifications,
 		private ?string $userId,
 	) {
 		parent::__construct($appName, $request);
@@ -121,7 +123,9 @@ class PositionController extends Controller {
 			$guest->setExpiresAt(time() + $duration * 60);
 		}
 
-		$this->guestMapper->upsert($guest);
+		if ($this->guestMapper->upsert($guest)) {
+			$this->joinNotifications->guestJoined($group->getId(), $cleanName);
+		}
 
 		return new DataResponse(['ok' => true]);
 	}

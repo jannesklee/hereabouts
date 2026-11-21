@@ -2,6 +2,7 @@
 
 namespace OCA\Hereabouts\AppInfo;
 
+use OCA\Hereabouts\Notification\Notifier;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -23,11 +24,19 @@ class Application extends App implements IBootstrap {
 	/** How long a guest the owner removed stays blocked from silently rejoining. */
 	public const REMOVED_GUEST_KEEP = 24 * 3600;
 
+	/**
+	 * How long an inactive guest's entry (without position) is kept. Coming
+	 * back within that time continues the old entry, so the group isn't
+	 * notified of them "joining" again (see Notification\JoinNotifications).
+	 */
+	public const INACTIVE_GUEST_KEEP = 24 * 3600;
+
 	public function __construct(array $urlParams = []) {
 		parent::__construct(self::APP_ID, $urlParams);
 	}
 
 	public function register(IRegistrationContext $context): void {
+		$context->registerNotifierService(Notifier::class);
 	}
 
 	public function boot(IBootContext $context): void {

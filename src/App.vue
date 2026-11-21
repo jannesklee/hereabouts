@@ -312,7 +312,10 @@ export default {
 			this.acquireWakeLock()
 			document.addEventListener('visibilitychange', this.onVisibilityChange)
 
-			this.fetchGroups().then(() => this.fetchPositions())
+			this.fetchGroups().then(() => {
+				this.openGroupFromUrl()
+				this.fetchPositions()
+			})
 			this.pollInterval = setInterval(() => {
 				this.fetchGroups().then(() => this.fetchPositions())
 				this.fetchShares()
@@ -370,6 +373,17 @@ export default {
 				// Also send an immediate heartbeat so we don't wait up to 30s
 				if (this.lastPosition) this.sendPosition(this.lastPosition)
 			}
+		},
+
+		// Notifications ("Anna joined Family") link to ?group=<id>: open that
+		// group's map, then drop the parameter so a reload shows the overview.
+		openGroupFromUrl() {
+			const url = new URL(window.location.href)
+			const id = Number(url.searchParams.get('group'))
+			if (!id) return
+			if (this.groups.some((g) => g.id === id)) this.openGroupId = id
+			url.searchParams.delete('group')
+			window.history.replaceState(null, '', url.toString())
 		},
 
 		async fetchGroups() {

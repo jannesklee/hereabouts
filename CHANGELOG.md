@@ -1,10 +1,11 @@
 # Changelog
 
-## 0.1.2 – unreleased
+## 0.1.3 – unreleased
 
 ### Added
 - Link previews in chat apps (WhatsApp, Signal, Telegram, ...): group invites and share links each get their own title, text and image
 - "Open in the Hereabouts app" on the invite page on Android, which opens the companion app (it asks before joining)
+- Nextcloud notifications when someone joins a group (member or guest), sent to everyone else in it; clicking one opens the group
 
 ### Changed
 - Group map, guest page and share-link page now use the same full-screen live map

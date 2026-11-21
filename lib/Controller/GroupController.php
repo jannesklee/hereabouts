@@ -9,6 +9,7 @@ use OCA\Hereabouts\Db\GroupMember;
 use OCA\Hereabouts\Db\GroupMemberMapper;
 use OCA\Hereabouts\Db\GuestMapper;
 use OCA\Hereabouts\Db\PositionMapper;
+use OCA\Hereabouts\Notification\JoinNotifications;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
@@ -31,6 +32,7 @@ class GroupController extends Controller {
 		private GuestMapper $guestMapper,
 		private IUserManager $userManager,
 		private IURLGenerator $urlGenerator,
+		private JoinNotifications $joinNotifications,
 		private ?string $userId,
 	) {
 		parent::__construct($appName, $request);
@@ -258,6 +260,7 @@ class GroupController extends Controller {
 			$member->setUserId($this->userId);
 			$member->setJoinedAt(time());
 			$this->groupMemberMapper->insert($member);
+			$this->joinNotifications->memberJoined($group->getId(), $this->userId);
 		}
 
 		return new DataResponse([

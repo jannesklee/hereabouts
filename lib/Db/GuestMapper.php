@@ -85,8 +85,28 @@ class GuestMapper extends QBMapper {
 	}
 
 	/**
-	 * Guests whose last update is older than $before (they left without
-	 * pressing Stop). Leaves removed guests alone: see deleteRemovedBefore().
+	 * Forgets the position of guests whose last update is older than $before
+	 * (they left without pressing Stop). The row itself stays for a while
+	 * (see deleteInactive()), so a guest coming back soon carries on instead
+	 * of "joining" again.
+	 */
+	public function clearInactivePositions(int $before): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->update($this->getTableName())
+			->set('lat', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->set('lon', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->set('acc', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->set('alt', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->set('speed', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->set('bearing', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->where($qb->expr()->isNotNull('lat'))
+			->andWhere($qb->expr()->lt('updated_at', $qb->createNamedParameter($before, IQueryBuilder::PARAM_INT)));
+		return $qb->executeStatement();
+	}
+
+	/**
+	 * Guests whose last update is older than $before. Leaves removed guests
+	 * alone: see deleteRemovedBefore().
 	 */
 	public function deleteInactive(int $before): int {
 		$qb = $this->db->getQueryBuilder();
@@ -110,17 +130,22 @@ class GuestMapper extends QBMapper {
 		return $qb->executeStatement();
 	}
 
-	public function upsert(Guest $guest): void {
+	/**
+	 * @return bool true if this created the guest (they just joined), false
+	 *              if it updated an existing one
+	 */
+	public function upsert(Guest $guest): bool {
 		try {
 			$existing = $this->findByGroupAndName($guest->getGroupId(), $guest->getName());
 			$this->applyUpdate($existing, $guest);
-			return;
+			return false;
 		} catch (DoesNotExistException $e) {
 			// No row yet - fall through to insert below.
 		}
 
 		try {
 			$this->insert($guest);
+			return true;
 		} catch (DbException $e) {
 			// Two position updates for the same (group_id, name) can race on a
 			// guest's very first fix (e.g. the browser's watchPosition firing
@@ -133,6 +158,7 @@ class GuestMapper extends QBMapper {
 			}
 			$existing = $this->findByGroupAndName($guest->getGroupId(), $guest->getName());
 			$this->applyUpdate($existing, $guest);
+			return false;
 		}
 	}
 
