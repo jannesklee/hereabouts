@@ -1,7 +1,6 @@
 /* eslint-disable */
-import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
-import { isStale } from './utils/stale.js'
+import { createApp, reactive } from 'vue'
+import GuestLive from './GuestLive.vue'
 
 ;(function () {
 	'use strict'
@@ -79,9 +78,12 @@ import { isStale } from './utils/stale.js'
 	}
 
 	// Guest: time-boxed sharing under a chosen name, no Nextcloud account.
+	// While sharing, the page shows the same live map as logged-in users get
+	// (GuestLive.vue -> components/LiveMap.vue).
 	function setupGuestFlow(container) {
 		var GUEST_UPDATE_URL = container.dataset.guestUpdateUrl
 		var GUEST_POSITIONS_URL = container.dataset.guestPositionsUrl
+		var GROUP_NAME = container.dataset.groupName || ''
 
 		var formView = document.getElementById('ls-form-view')
 		var sharingView = document.getElementById('ls-sharing-view')
@@ -91,12 +93,11 @@ import { isStale } from './utils/stale.js'
 		var startBtn = document.getElementById('ls-start-btn')
 		var fakeBtn = document.getElementById('ls-fake-btn')
 		var durationBtns = Array.prototype.slice.call(document.querySelectorAll('.ls-duration-btn'))
-		var statusText = document.getElementById('ls-status-text')
-		var expiresText = document.getElementById('ls-expires-text')
-		var stopBtn = document.getElementById('ls-stop-btn')
 		var restartBtn = document.getElementById('ls-restart-btn')
 		var retryBtn = document.getElementById('ls-retry-btn')
 		var errorText = document.getElementById('ls-error-text')
+		var nameError = document.getElementById('ls-name-error')
+		var durationHint = document.getElementById('ls-duration-hint')
 
 		var selectedMinutes = 60
 		var watchId = null
@@ -106,16 +107,10 @@ import { isStale } from './utils/stale.js'
 		var fakeCity = null
 		var fakeLat, fakeLon
 		var currentName = null
-		var map = null
-		var mapMarkers = {}
-		var mapPollTimer = null
-		var focusedUserId = null
-
-		var style = getComputedStyle(document.documentElement)
-		var primaryColor = style.getPropertyValue('--color-primary').trim() || '#0082c9'
-		var primaryText = style.getPropertyValue('--color-primary-text').trim() || '#fff'
-		var defaultBg = style.getPropertyValue('--color-main-background').trim() || '#fff'
-		var defaultText = style.getPropertyValue('--color-main-text').trim() || '#222'
+		var liveApp = null
+		var hintTimer = null
+		// Read by the live map's top bar (GuestLive.vue)
+		var sharing = reactive({ status: null, expiresAt: null, sends: 0 })
 
 		durationBtns.forEach(function (btn) {
 			btn.addEventListener('click', function () {
@@ -124,14 +119,37 @@ import { isStale } from './utils/stale.js'
 			})
 		})
 		updateDurationButtons()
+		startHintClock()
 
 		function updateDurationButtons() {
 			durationBtns.forEach(function (btn) {
 				var active = parseInt(btn.dataset.minutes, 10) === selectedMinutes
-				btn.style.backgroundColor = active ? primaryColor : defaultBg
-				btn.style.color = active ? primaryText : defaultText
-				btn.style.borderColor = active ? primaryColor : ''
+				btn.setAttribute('aria-pressed', active ? 'true' : 'false')
 			})
+			updateDurationHint()
+		}
+
+		// "Stops at 15:42" under the duration choices, so the guest knows the
+		// actual end time rather than doing the maths.
+		function updateDurationHint() {
+			if (!durationHint) return
+			if (selectedMinutes <= 0) {
+				durationHint.textContent = 'Keeps sharing until you tap “Stop sharing”.'
+				return
+			}
+			var end = new Date(Date.now() + selectedMinutes * 60000)
+			var time = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+			var tomorrow = end.toDateString() !== new Date(Date.now()).toDateString()
+			durationHint.textContent = 'Stops automatically at ' + time + (tomorrow ? ' tomorrow' : '') + '.'
+		}
+
+		// Keep that end time current while the form is open.
+		function startHintClock() {
+			if (hintTimer === null && durationHint) hintTimer = setInterval(updateDurationHint, 30000)
+		}
+
+		function stopHintClock() {
+			if (hintTimer !== null) { clearInterval(hintTimer); hintTimer = null }
 		}
 
 		function showView(view) {
@@ -139,6 +157,17 @@ import { isStale } from './utils/stale.js'
 				if (v) v.style.display = 'none'
 			})
 			if (view) view.style.display = 'flex'
+			if (view === formView) {
+				updateDurationHint()
+				startHintClock()
+			} else {
+				stopHintClock()
+			}
+		}
+
+		function setNameError(show) {
+			if (nameInput) nameInput.setAttribute('aria-invalid', show ? 'true' : 'false')
+			if (nameError) nameError.hidden = !show
 		}
 
 		function sendPosition(guestUpdateUrl, name, lat, lon, alt, acc) {
@@ -150,247 +179,48 @@ import { isStale } from './utils/stale.js'
 
 			fetch(guestUpdateUrl + '?' + params.toString(), { method: 'POST' })
 				.then(function (r) {
-					if (r.ok && statusText) {
-						statusText.textContent = fakeCity
-							? 'Sending fake position near ' + fakeCity.name + '…'
-							: 'Sending position…'
-					}
+					if (!r.ok) throw new Error('HTTP ' + r.status)
+					sharing.status = null
+					sharing.sends++
 				})
 				.catch(function () {
-					if (statusText) statusText.textContent = 'Failed to send. Retrying…'
+					sharing.status = 'Failed to send. Retrying…'
 				})
 		}
 
-		function updateExpiresText() {
-			if (!expiresAt || !expiresText) return
-			var diff = expiresAt - Math.floor(Date.now() / 1000)
-			if (diff <= 0) {
+		// Sharing ends by itself at the chosen time (the top bar shows how long
+		// is left).
+		function checkExpiry() {
+			if (expiresAt && Math.floor(Date.now() / 1000) >= expiresAt) {
 				stopSharing(false)
 				showView(stoppedView)
-				return
 			}
-			var h = Math.floor(diff / 3600)
-			var m = Math.floor((diff % 3600) / 60)
-			expiresText.textContent = h > 0
-				? 'Stops in ' + h + 'h ' + m + 'min'
-				: 'Stops in ' + (m + 1) + ' min'
 		}
 
-		function initMap() {
-			if (map) return
-			var mapEl = document.getElementById('ls-guest-map')
-			if (!mapEl || !GUEST_POSITIONS_URL) return
-			map = new maplibregl.Map({
-				container: mapEl,
-				style: {
-					version: 8,
-					sources: {
-						osm: {
-							type: 'raster',
-							tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-							tileSize: 256,
-							attribution: '© OpenStreetMap contributors',
-						},
-					},
-					layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-				},
-				center: [0, 20],
-				zoom: 2,
+		// The sharing view must be visible before mounting: MapLibre sizes
+		// itself to its container.
+		function showLiveMap() {
+			var el = document.getElementById('ls-guest-live-map')
+			if (liveApp || !el || !GUEST_POSITIONS_URL) return
+			liveApp = createApp(GuestLive, {
+				groupName: GROUP_NAME,
+				positionsUrl: GUEST_POSITIONS_URL,
+				name: currentName,
+				sharing: sharing,
+				onStop: function () { stopSharing(true) },
 			})
+			liveApp.mount(el)
 		}
 
-		function createGuestMarkerEl(member) {
-			var el = document.createElement('div')
-			el.className = 'ls-guest-marker' + (member.isMe ? ' ls-guest-marker--me' : '')
-			if (member.userId === focusedUserId) el.className += ' ls-guest-marker--focused'
-			if (member.avatarUrl) {
-				var img = document.createElement('img')
-				img.src = member.avatarUrl
-				img.alt = member.displayName
-				el.appendChild(img)
-			} else {
-				el.textContent = member.displayName.charAt(0).toUpperCase()
-			}
-			return el
-		}
-
-		function buildGuestPopupEl(member) {
-			var wrap = document.createElement('div')
-			wrap.style.fontSize = '13px'
-			wrap.style.fontWeight = '600'
-			wrap.textContent = member.displayName + (member.isMe ? ' (you)' : '')
-			return wrap
-		}
-
-		function fitMapBounds(members) {
-			if (!map || members.length === 0) return
-
-			if (focusedUserId) {
-				var focused = members.filter(function (m) { return m.userId === focusedUserId })[0]
-				if (focused) {
-					map.flyTo({ center: [focused.lon, focused.lat], zoom: 15 })
-					return
-				}
-			}
-
-			if (members.length === 1) {
-				map.flyTo({ center: [members[0].lon, members[0].lat], zoom: 13 })
-				return
-			}
-			var bounds = new maplibregl.LngLatBounds()
-			members.forEach(function (m) { bounds.extend([m.lon, m.lat]) })
-			map.fitBounds(bounds, { padding: 50, maxZoom: 15 })
-		}
-
-		// Clicking a person (in the list, or their marker) centers the map on
-		// them and keeps following them on every poll; clicking again (or
-		// picking someone else) returns to the all-members overview.
-		function toggleFocus(userId, members) {
-			focusedUserId = focusedUserId === userId ? null : userId
-			fitMapBounds(members.filter(function (m) { return m.hasPosition }))
-			renderGuestMemberList(members)
-		}
-
-		function formatLastSeen(updatedAt) {
-			if (!updatedAt) return 'Not sharing'
-			var diff = Math.floor(Date.now() / 1000) - updatedAt
-			if (diff < 60) return 'Just now'
-			if (diff < 3600) return Math.floor(diff / 60) + ' min ago'
-			return Math.floor(diff / 3600) + ' h ago'
-		}
-
-		function renderGuestMemberList(members) {
-			var listEl = document.getElementById('ls-guest-member-list')
-			if (!listEl) return
-			var nowTs = Math.floor(Date.now() / 1000)
-			listEl.innerHTML = ''
-
-			members.forEach(function (member) {
-				var li = document.createElement('li')
-
-				var row = document.createElement('button')
-				row.type = 'button'
-				row.className = 'ls-guest-member-item'
-				if (member.hasPosition) row.className += ' ls-guest-member-item--clickable'
-				if (member.userId === focusedUserId) row.className += ' ls-guest-member-item--selected'
-				if (member.hasPosition) {
-					row.addEventListener('click', function () { toggleFocus(member.userId, members) })
-				} else {
-					row.disabled = true
-				}
-
-				var avatar = document.createElement('span')
-				avatar.className = 'ls-guest-member-avatar'
-				if (member.avatarUrl) {
-					var img = document.createElement('img')
-					img.src = member.avatarUrl
-					img.alt = member.displayName
-					img.style.width = '100%'
-					img.style.height = '100%'
-					img.style.borderRadius = '50%'
-					img.style.objectFit = 'cover'
-					avatar.appendChild(img)
-				} else {
-					avatar.textContent = member.displayName.charAt(0).toUpperCase()
-				}
-				row.appendChild(avatar)
-
-				var info = document.createElement('span')
-				info.className = 'ls-guest-member-info'
-
-				var name = document.createElement('span')
-				name.className = 'ls-guest-member-name'
-				name.textContent = member.displayName + (member.isMe ? ' (you)' : '')
-				info.appendChild(name)
-
-				var seen = document.createElement('span')
-				seen.className = 'ls-guest-member-seen'
-				seen.textContent = formatLastSeen(member.updatedAt)
-				info.appendChild(seen)
-
-				row.appendChild(info)
-
-				var dot = document.createElement('span')
-				dot.className = 'ls-guest-member-status'
-				if (member.hasPosition) {
-					dot.className += isStale(member.updatedAt, nowTs)
-						? ' ls-guest-member-status--stale'
-						: ' ls-guest-member-status--active'
-				}
-				row.appendChild(dot)
-
-				li.appendChild(row)
-				listEl.appendChild(li)
-			})
-		}
-
-		function updateGuestMarkers(members) {
-			if (!map) return
-			var seen = {}
-			members.forEach(function (member) {
-				if (!member.hasPosition) return
-				seen[member.userId] = true
-				if (mapMarkers[member.userId]) {
-					mapMarkers[member.userId].setLngLat([member.lon, member.lat])
-					mapMarkers[member.userId].getElement().classList.toggle(
-						'ls-guest-marker--focused', member.userId === focusedUserId)
-				} else {
-					var popup = new maplibregl.Popup({ offset: 24, maxWidth: 'none' })
-						.setDOMContent(buildGuestPopupEl(member))
-					var markerEl = createGuestMarkerEl(member)
-					markerEl.addEventListener('click', function () { toggleFocus(member.userId, members) })
-					mapMarkers[member.userId] = new maplibregl.Marker({ element: markerEl })
-						.setLngLat([member.lon, member.lat])
-						.setPopup(popup)
-						.addTo(map)
-				}
-			})
-			Object.keys(mapMarkers).forEach(function (userId) {
-				if (!seen[userId]) {
-					mapMarkers[userId].remove()
-					delete mapMarkers[userId]
-				}
-			})
-			fitMapBounds(members.filter(function (m) { return m.hasPosition }))
-			renderGuestMemberList(members)
-		}
-
-		function fetchGuestPositions() {
-			if (!GUEST_POSITIONS_URL || !currentName) return
-			var params = new URLSearchParams({ name: currentName })
-			fetch(GUEST_POSITIONS_URL + '?' + params.toString())
-				.then(function (r) { return r.ok ? r.json() : [] })
-				.then(function (data) { updateGuestMarkers(data) })
-				.catch(function () { /* keep last-known markers on a transient failure */ })
-		}
-
-		function startGuestMap() {
-			if (!GUEST_POSITIONS_URL) return
-			if (!map) {
-				// The sharing view has just been made visible - MapLibre needs the
-				// container to already have layout size, so wait a frame.
-				requestAnimationFrame(function () {
-					initMap()
-					fetchGuestPositions()
-				})
-			} else {
-				map.resize()
-				fetchGuestPositions()
-			}
-			if (mapPollTimer === null) {
-				mapPollTimer = setInterval(fetchGuestPositions, 10000)
-			}
-		}
-
-		function stopGuestMap() {
-			if (mapPollTimer !== null) {
-				clearInterval(mapPollTimer)
-				mapPollTimer = null
+		function hideLiveMap() {
+			if (liveApp) {
+				liveApp.unmount()
+				liveApp = null
 			}
 		}
 
 		function stopSharing(showStopped) {
-			stopGuestMap()
+			hideLiveMap()
 			if (watchId !== null) {
 				fakeMode ? clearInterval(watchId) : navigator.geolocation.clearWatch(watchId)
 				watchId = null
@@ -412,11 +242,12 @@ import { isStale } from './utils/stale.js'
 			expiresAt = selectedMinutes > 0
 				? Math.floor(Date.now() / 1000) + selectedMinutes * 60
 				: null
+			sharing.status = useFake ? 'Starting fake location…' : 'Waiting for GPS fix…'
+			sharing.expiresAt = expiresAt
+			sharing.sends = 0
 
 			showView(sharingView)
-			if (statusText) statusText.textContent = useFake ? 'Starting fake location…' : 'Waiting for GPS fix…'
-			if (!expiresAt && expiresText) expiresText.textContent = 'Sharing until you stop'
-			startGuestMap()
+			showLiveMap()
 
 			if (useFake) {
 				fakeCity = FAKE_CITIES[Math.floor(Math.random() * FAKE_CITIES.length)]
@@ -445,28 +276,27 @@ import { isStale } from './utils/stale.js'
 			}
 
 			if (expiresAt) {
-				updateExpiresText()
-				countdownTimer = setInterval(updateExpiresText, 30000)
+				countdownTimer = setInterval(checkExpiry, 30000)
 			}
 		}
 
 		function beginSharing(useFake) {
 			var name = nameInput ? nameInput.value.trim() : ''
 			if (!name) {
-				if (nameInput) { nameInput.style.borderColor = 'var(--color-error, red)'; nameInput.focus() }
+				setNameError(true)
+				if (nameInput) nameInput.focus()
 				return
 			}
-			if (nameInput) nameInput.style.borderColor = ''
+			setNameError(false)
 			startSharingWithUrl(GUEST_UPDATE_URL, name, useFake)
 		}
 
 		if (startBtn) startBtn.addEventListener('click', function () { beginSharing(false) })
 		if (fakeBtn) fakeBtn.addEventListener('click', function () { beginSharing(true) })
-		if (stopBtn) stopBtn.addEventListener('click', function () { stopSharing(true) })
 		if (restartBtn) restartBtn.addEventListener('click', function () { showView(formView) })
 		if (retryBtn) retryBtn.addEventListener('click', function () { showView(formView) })
 		if (nameInput) {
-			nameInput.addEventListener('input', function () { nameInput.style.borderColor = '' })
+			nameInput.addEventListener('input', function () { if (nameInput.value.trim()) setNameError(false) })
 			nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') beginSharing(false) })
 		}
 	}

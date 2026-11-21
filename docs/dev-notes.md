@@ -175,3 +175,21 @@ Starting the companion with `CI=1 npx expo run:android` (or `expo start`) makes 
 ## `@nextcloud/vue` 9: `NcButton type="tertiary"` silently loses its style (2026-11-21)
 
 In `@nextcloud/vue` 9, `NcButton`'s `type` prop is the native button type (`button`/`submit`/`reset`), and the look is set with `variant` (`primary`, `tertiary`, …). Older code using `type="tertiary"` / `type="primary"` still compiles and renders, but every such button gets the default `secondary` style, and "Create share link" lost its primary colour. All buttons in `src/App.vue` now use `variant`. Use `variant` for new buttons.
+
+## Redeploying with the same app version: browsers keep the old JS for 6 months (2026-11-21)
+
+Symptom: after deploying the redesigned guest page to the test server, the page showed the new markup (top bar) but behaved like the old script (no member strip, no map buttons, map re-framing on every poll).
+
+Cause: Nextcloud's `.htaccess` serves app JS/CSS with `Cache-Control: max-age=15778463, immutable` (checked with `curl -sI` against the test server). The `?v=` cache buster on script URLs comes from the app version in `appinfo/info.xml`, so while that stays the same (it was `0.1.0` for every deploy) the URL never changes. Browsers that had loaded the page before keep using the old script without asking the server, while the PHP template (HTML) is always fresh. Old script plus new markup gives a half-updated page. The local Docker env doesn't show this: with `debug=true` Nextcloud leaves out `?v=` altogether.
+
+Fix while testing: open the page in a fresh private window, or hard-reload (Ctrl+Shift+R). For anything other people use (releases, family testers), bump `<version>` in `info.xml` so every script URL changes; Nextcloud then needs `occ upgrade` (or the web updater's "update" button) before the app runs again.
+
+## Public pages: Nextcloud's core CSS squashes plain `<input>`/`<button>` elements (2026-11-21)
+
+Symptom: on the guest join page (`templates/join.php`) the name field looked cramped, with its text partly cut off. The duration buttons were slightly offset and changed colour on focus or hover in ways the page's own CSS never asked for.
+
+Cause: core `server.css` (checked on the test server, NC 35) styles every bare form element. `input:not([type=radio]):not([type=checkbox])…` sets `height: var(--default-clickable-area)` (34px). Our `#ls-name-input` rule set `padding: 14px 16px` but no height, so with `box-sizing: border-box` almost nothing was left for the text. `button:not(.button-vue,…)` adds `margin: 3px`, `width: 130px`, its own padding and a `:hover`/`:focus` background. Nextcloud components (NcButton etc.) opt out via `.button-vue`; hand-written markup doesn't.
+
+Fix: scope the page's styles under `#hereabouts-join` (an ID beats the long `:not()` chains), and set `height`, `margin`, `width` and the `:hover`/`:focus` states explicitly on every input and button.
+
+Related: the public layout's `#content` is a fixed flex row with no background. A card placed in it directly shrinks to its content width. `join.php` therefore positions `#hereabouts-join` fixed below the header, like `Viewer.vue`. It stays transparent, so the theme background behind the header continues behind the card.

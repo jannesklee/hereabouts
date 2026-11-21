@@ -115,99 +115,30 @@
 		</NcAppNavigation>
 
 		<NcAppContent>
-			<div class="ls-map-wrap">
-				<div id="ls-map-container" />
-
-				<!-- Floating bar while a group is open: back, name, settings -->
-				<div v-if="openGroup" class="ls-map-topbar">
+			<!-- The same live map as the guest page (components/LiveMap.vue);
+				with a group open, back and settings buttons in its top bar. -->
+			<LiveMap
+				:members="mapMembers"
+				:title="openGroup ? openGroup.name : 'All groups'"
+				:fit-key="openGroupId"
+				:member-groups="memberGroupsByUser"
+				after-toggle
+				@open-group="openGroupId = $event">
+				<template v-if="openGroup" #leading>
 					<NcButton variant="tertiary" aria-label="Back to all groups" @click="openGroupId = null">
 						<template #icon>
 							<ArrowLeftIcon :size="20" />
 						</template>
 					</NcButton>
-					<div class="ls-map-topbar-text">
-						<span class="ls-map-title">{{ openGroup.name }}</span>
-						<span class="ls-map-subtitle">{{ sharingSummary }}</span>
-					</div>
+				</template>
+				<template v-if="openGroup" #actions>
 					<NcButton variant="tertiary" aria-label="Group settings" @click="settingsOpen = true">
 						<template #icon>
 							<CogIcon :size="20" />
 						</template>
 					</NcButton>
-				</div>
-
-				<!-- Map buttons, above the member chips -->
-				<div v-if="positionedMembers.length" class="ls-map-buttons">
-					<button
-						type="button"
-						class="ls-map-btn ls-map-btn--zoom"
-						title="Zoom in"
-						aria-label="Zoom in"
-						@click="map.zoomIn()">
-						<PlusIcon :size="20" />
-					</button>
-					<button
-						type="button"
-						class="ls-map-btn ls-map-btn--zoom"
-						title="Zoom out"
-						aria-label="Zoom out"
-						@click="map.zoomOut()">
-						<MinusIcon :size="20" />
-					</button>
-					<button
-						type="button"
-						class="ls-map-btn"
-						title="Show everyone"
-						aria-label="Show everyone"
-						@click="showEveryone">
-						<ArrowExpandAllIcon :size="20" />
-					</button>
-					<button
-						v-if="me"
-						type="button"
-						class="ls-map-btn"
-						:class="{ 'ls-map-btn--active': focusedUserId === me.userId }"
-						title="Show me"
-						aria-label="Show me"
-						@click="toggleFocus(me)">
-						<CrosshairsGpsIcon :size="20" />
-					</button>
-				</div>
-
-				<span class="ls-map-attribution">
-					© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors
-				</span>
-
-				<!-- Member chips: click to follow someone, click again for everyone -->
-				<div v-if="sortedMapMembers.length" class="ls-map-chips">
-					<button
-						v-for="member in sortedMapMembers"
-						:key="member.userId"
-						type="button"
-						class="ls-chip"
-						:class="{ 'ls-chip--selected': member.userId === focusedUserId }"
-						:disabled="!member.hasPosition"
-						:title="member.hasPosition ? 'Show ' + member.displayName + ' on the map' : member.displayName + ' is not sharing'"
-						@click="toggleFocus(member)">
-						<img
-							v-if="member.avatarUrl"
-							class="ls-chip-avatar"
-							:class="{ 'ls-chip-avatar--idle': !member.hasPosition }"
-							:src="member.avatarUrl"
-							alt="">
-						<span
-							v-else
-							class="ls-chip-avatar ls-chip-avatar--initial"
-							:class="{ 'ls-chip-avatar--idle': !member.hasPosition }">
-							{{ member.displayName.charAt(0).toUpperCase() }}
-						</span>
-						<span class="ls-chip-text">
-							<span class="ls-chip-name">{{ member.isMe ? 'You' : member.displayName.split(' ')[0] }}</span>
-							<span class="ls-chip-time">{{ lastSeenLabel(member) }}</span>
-						</span>
-					</button>
-				</div>
-			</div>
+				</template>
+			</LiveMap>
 
 			<!-- Group settings -->
 			<NcModal
@@ -293,7 +224,6 @@
 </template>
 
 <script>
-import maplibregl from 'maplibre-gl'
 import { loadState } from '@nextcloud/initial-state'
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
@@ -306,15 +236,12 @@ import {
 	NcCheckboxRadioSwitch,
 	NcModal,
 } from '@nextcloud/vue'
-import ArrowExpandAllIcon from 'vue-material-design-icons/ArrowExpandAll.vue'
 import ArrowLeftIcon from 'vue-material-design-icons/ArrowLeft.vue'
 import CheckIcon from 'vue-material-design-icons/Check.vue'
 import CogIcon from 'vue-material-design-icons/Cog.vue'
 import ContentCopyIcon from 'vue-material-design-icons/ContentCopy.vue'
-import CrosshairsGpsIcon from 'vue-material-design-icons/CrosshairsGps.vue'
 import DeleteIcon from 'vue-material-design-icons/Delete.vue'
-import MinusIcon from 'vue-material-design-icons/Minus.vue'
-import PlusIcon from 'vue-material-design-icons/Plus.vue'
+import LiveMap from './components/LiveMap.vue'
 import { isStale } from './utils/stale.js'
 
 export default {
@@ -327,37 +254,26 @@ export default {
 		NcButton,
 		NcCheckboxRadioSwitch,
 		NcModal,
-		ArrowExpandAllIcon,
 		ArrowLeftIcon,
 		CheckIcon,
 		CogIcon,
 		ContentCopyIcon,
-		CrosshairsGpsIcon,
 		DeleteIcon,
-		MinusIcon,
-		PlusIcon,
+		LiveMap,
 	},
 
 	data() {
 		return {
-			map: null,
 			state: loadState('hereabouts', 'hereabouts-state'),
 			watchId: null,
 			pollInterval: null,
 			heartbeatInterval: null,
-			markers: {},
 			members: [],
 			// userId -> [{ id, name }] for every one of *my* groups that member is
 			// visible via - always the full cross-group picture, independent of
 			// which single group (if any) is currently narrowing the map.
 			memberGroupsByUser: {},
 			nowTs: Math.floor(Date.now() / 1000),
-			// Set by clicking a member chip or marker - flies to them and keeps
-			// following them across polls until toggled off.
-			focusedUserId: null,
-			// The map frames everyone once when positions first arrive; after
-			// that it only moves when asked (or to follow focusedUserId).
-			didInitialFit: false,
 			settingsOpen: false,
 			statusInterval: null,
 			lastPosition: null,
@@ -380,24 +296,6 @@ export default {
 
 	mounted() {
 		this.$nextTick(() => {
-			this.map = new maplibregl.Map({
-				container: 'ls-map-container',
-				// Shown as our own overlay, above the member chips
-				attributionControl: false,
-				style: {
-					version: 8,
-					sources: {
-						osm: {
-							type: 'raster',
-							tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-							tileSize: 256,
-							attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
-						},
-					},
-					layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-				},
-			})
-
 			this.watchId = navigator.geolocation.watchPosition(
 				(pos) => this.sendPosition(pos),
 				(err) => console.warn('Geolocation error', err),
@@ -420,7 +318,6 @@ export default {
 			}, 15000)
 			this.statusInterval = setInterval(() => {
 				this.nowTs = Math.floor(Date.now() / 1000)
-				this.updateStaleClasses()
 			}, 30000)
 			this.fetchShares()
 		})
@@ -433,8 +330,6 @@ export default {
 		if (this.statusInterval !== null) clearInterval(this.statusInterval)
 		document.removeEventListener('visibilitychange', this.onVisibilityChange)
 		this.releaseWakeLock()
-		Object.values(this.markers).forEach((m) => m.remove())
-		if (this.map) this.map.remove()
 	},
 
 	methods: {
@@ -479,7 +374,11 @@ export default {
 		async fetchGroups() {
 			try {
 				const { data } = await axios.get(this.state.groupsUrl)
-				this.groups = data.groups
+				// The groups API has no members; keep the last known ones until
+				// fetchPositions() refreshes them, so the open group's map and
+				// settings don't empty out for a moment every 15s.
+				const previous = new Map(this.groups.map((g) => [g.id, g.members]))
+				this.groups = data.groups.map((g) => ({ ...g, members: previous.get(g.id) ?? [] }))
 			} catch (e) {
 				console.error('Failed to fetch groups', e)
 			}
@@ -602,125 +501,9 @@ export default {
 				this.memberGroupsByUser = groupsByUser
 				const data = Array.from(merged.values())
 				this.members = data
-				this.updateMarkers(this.mapMembers)
 			} catch (e) {
 				console.error('Failed to fetch positions', e)
 			}
-		},
-
-		updateMarkers(members) {
-			const seen = new Set()
-			this.nowTs = Math.floor(Date.now() / 1000)
-
-			for (const member of members) {
-				if (!member.hasPosition) continue
-				seen.add(member.userId)
-
-				if (this.markers[member.userId]) {
-					const marker = this.markers[member.userId]
-					marker.setLngLat([member.lon, member.lat])
-					marker.getElement().classList.toggle('ls-marker--stale', isStale(member.updatedAt, this.nowTs))
-					marker.getElement().classList.toggle('ls-marker--focused', member.userId === this.focusedUserId)
-					marker.getPopup()?.setDOMContent(this.buildPopupContent(member))
-				} else {
-					const el = this.createMarkerEl(member)
-					el.classList.toggle('ls-marker--stale', isStale(member.updatedAt, this.nowTs))
-					el.classList.toggle('ls-marker--focused', member.userId === this.focusedUserId)
-					el.addEventListener('click', () => this.toggleFocus(member))
-					this.markers[member.userId] = new maplibregl.Marker({ element: el })
-						.setLngLat([member.lon, member.lat])
-						.setPopup(new maplibregl.Popup({ offset: 28, maxWidth: 'none' })
-							.setDOMContent(this.buildPopupContent(member)))
-						.addTo(this.map)
-				}
-			}
-
-			for (const userId of Object.keys(this.markers)) {
-				if (!seen.has(userId)) {
-					this.markers[userId].remove()
-					delete this.markers[userId]
-				}
-			}
-
-			if (!this.didInitialFit && seen.size > 0) {
-				this.didInitialFit = true
-				this.fitEveryone(false)
-			} else {
-				this.followFocused()
-			}
-		},
-
-		// Room taken by the overlays (top bar, member chips, map buttons), so
-		// fitted or followed markers don't end up underneath them.
-		mapPadding() {
-			return { top: this.openGroup ? 80 : 24, bottom: 96, left: 32, right: 72 }
-		},
-
-		// Zoom out to show everyone on the map (all groups, or the open one).
-		fitEveryone(animate = true) {
-			const positioned = this.positionedMembers
-			if (!this.map || positioned.length === 0) return
-			const bounds = new maplibregl.LngLatBounds()
-			positioned.forEach((m) => bounds.extend([m.lon, m.lat]))
-			this.map.fitBounds(bounds, {
-				padding: this.mapPadding(),
-				maxZoom: 15,
-				duration: animate ? 800 : 0,
-			})
-		},
-
-		showEveryone() {
-			this.focusedUserId = null
-			this.refreshFocusClasses()
-			this.fitEveryone()
-		},
-
-		// Clicking a member's chip or marker follows them (see followFocused);
-		// clicking them again goes back to everyone. Ignored for members with
-		// no position - there's nowhere to go.
-		toggleFocus(clicked) {
-			// Marker click handlers hold the member object from when the marker
-			// was created, so look up the current position.
-			const member = this.positionedMembers.find((m) => m.userId === clicked.userId)
-			if (!member) return
-			if (this.focusedUserId === member.userId) {
-				this.showEveryone()
-				return
-			}
-			this.focusedUserId = member.userId
-			this.refreshFocusClasses()
-			this.map.flyTo({
-				center: [member.lon, member.lat],
-				zoom: Math.max(this.map.getZoom(), 15),
-				padding: this.mapPadding(),
-			})
-		},
-
-		// Keep the followed member centred as their position updates.
-		followFocused() {
-			if (!this.focusedUserId) return
-			const focused = this.positionedMembers.find((m) => m.userId === this.focusedUserId)
-			if (!focused) {
-				this.focusedUserId = null
-				this.refreshFocusClasses()
-				return
-			}
-			this.map.easeTo({ center: [focused.lon, focused.lat], padding: this.mapPadding(), duration: 600 })
-		},
-
-		refreshFocusClasses() {
-			for (const [userId, marker] of Object.entries(this.markers)) {
-				marker.getElement().classList.toggle('ls-marker--focused', userId === this.focusedUserId)
-			}
-		},
-
-		lastSeenLabel(member) {
-			if (!member.hasPosition) return 'Not sharing'
-			if (!member.updatedAt) return ''
-			const age = this.nowTs - member.updatedAt
-			if (age < 60) return 'Just now'
-			if (age < 3600) return `${Math.floor(age / 60)} min ago`
-			return `${Math.floor(age / 3600)}h ago`
 		},
 
 		memberStatusClass(member) {
@@ -736,99 +519,6 @@ export default {
 				return `Last update ${mins} min ago`
 			}
 			return 'Sharing location'
-		},
-
-		updateStaleClasses() {
-			for (const member of this.members) {
-				if (!member.hasPosition || !this.markers[member.userId]) continue
-				this.markers[member.userId].getElement()
-					.classList.toggle('ls-marker--stale', isStale(member.updatedAt, this.nowTs))
-			}
-		},
-
-		createMarkerEl(member) {
-			const el = document.createElement('div')
-			el.className = 'ls-marker' + (member.isMe ? ' ls-marker--me' : '')
-
-			if (member.avatarUrl) {
-				const img = document.createElement('img')
-				img.src = member.avatarUrl
-				img.alt = member.displayName
-				el.appendChild(img)
-			} else {
-				el.textContent = member.displayName.charAt(0).toUpperCase()
-			}
-
-			return el
-		},
-
-		// Built as real DOM nodes (not an HTML string) so the per-group "jump to
-		// this group" chips can carry real click listeners - popups persist their
-		// content across setDOMContent() calls, so this is safe to rebuild on
-		// every poll to keep the timestamp/accuracy/group list current.
-		buildPopupContent(member) {
-			const wrap = document.createElement('div')
-			wrap.className = 'ls-popup'
-
-			const row = document.createElement('div')
-			row.className = 'ls-popup-row'
-
-			if (member.avatarUrl) {
-				const img = document.createElement('img')
-				img.className = 'ls-popup-avatar'
-				img.src = member.avatarUrl
-				img.alt = member.displayName
-				row.appendChild(img)
-			} else {
-				const initial = document.createElement('span')
-				initial.className = 'ls-popup-avatar ls-popup-avatar--initial'
-				initial.textContent = member.displayName.charAt(0).toUpperCase()
-				row.appendChild(initial)
-			}
-
-			const info = document.createElement('div')
-			info.className = 'ls-popup-info'
-
-			const name = document.createElement('span')
-			name.className = 'ls-popup-name'
-			name.textContent = member.displayName
-			info.appendChild(name)
-
-			if (member.updatedAt) {
-				const updated = document.createElement('span')
-				updated.className = 'ls-popup-meta'
-				updated.textContent = `Updated ${new Date(member.updatedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-				info.appendChild(updated)
-			}
-			if (member.acc) {
-				const acc = document.createElement('span')
-				acc.className = 'ls-popup-meta'
-				acc.textContent = `±${Math.round(member.acc)} m`
-				info.appendChild(acc)
-			}
-
-			row.appendChild(info)
-			wrap.appendChild(row)
-
-			const memberGroups = this.memberGroupsByUser[member.userId] ?? []
-			if (memberGroups.length > 0) {
-				const groupRow = document.createElement('div')
-				groupRow.className = 'ls-popup-groups'
-				memberGroups.forEach((g) => {
-					const chip = document.createElement('button')
-					chip.type = 'button'
-					chip.className = 'ls-popup-group-chip'
-					chip.textContent = g.name
-					chip.addEventListener('click', () => {
-						this.openGroupId = g.id
-						this.markers[member.userId]?.getPopup()?.remove()
-					})
-					groupRow.appendChild(chip)
-				})
-				wrap.appendChild(groupRow)
-			}
-
-			return wrap
 		},
 
 		async fetchShares() {
@@ -892,29 +582,7 @@ export default {
 		// The map shows just one group's people while its detail view is open,
 		// and everyone across all groups (deduplicated) otherwise.
 		mapMembers() {
-			return this.openGroup ? this.openGroup.members : this.members
-		},
-
-		positionedMembers() {
-			return this.mapMembers.filter((m) => m.hasPosition && m.lat !== null && m.lon !== null)
-		},
-
-		me() {
-			return this.positionedMembers.find((m) => m.isMe) || null
-		},
-
-		// You first, then people who are sharing, then the rest.
-		sortedMapMembers() {
-			return [...this.mapMembers].sort((a, b) =>
-				Number(b.isMe) - Number(a.isMe)
-				|| Number(b.hasPosition) - Number(a.hasPosition)
-				|| a.displayName.localeCompare(b.displayName))
-		},
-
-		sharingSummary() {
-			const members = this.openGroup ? this.openGroup.members : []
-			const sharing = members.filter((m) => m.hasPosition).length
-			return sharing === 0 ? 'Nobody sharing right now' : `${sharing} of ${members.length} sharing`
+			return this.openGroup ? (this.openGroup.members ?? []) : this.members
 		},
 
 		durationOptions() {
@@ -930,227 +598,19 @@ export default {
 	watch: {
 		// Opening a group gives its map the whole content area: the sidebar
 		// (a drawer covering the map on phones) closes and comes back when
-		// leaving the group. Markers and framing switch right away instead of
-		// waiting for the next 15s poll.
+		// leaving the group. LiveMap frames the group itself (fit-key).
 		openGroupId(id) {
-			this.focusedUserId = null
 			this.settingsOpen = false
 			emit('toggle-navigation', { open: id === null })
-			this.updateMarkers(this.mapMembers)
-			this.fitEveryone()
 		},
 	},
 }
 </script>
 
 <style>
-@import 'maplibre-gl/dist/maplibre-gl.css';
-
 /* Ensure Vue root fills Nextcloud's content area so height:100% chain works */
 #hereabouts-app {
 	height: 100%;
-}
-
-/* Map with floating overlays (top bar, buttons, member chips) */
-.ls-map-wrap {
-	position: relative;
-	width: 100%;
-	height: 100%;
-}
-
-#ls-map-container {
-	width: 100%;
-	height: 100%;
-}
-
-.ls-map-topbar,
-.ls-map-btn,
-.ls-map-chips {
-	background: var(--color-main-background, #fff);
-	box-shadow: 0 2px 8px var(--color-box-shadow, rgba(0, 0, 0, .25));
-}
-
-.ls-map-topbar {
-	position: absolute;
-	top: 8px;
-	/* Leave room for Nextcloud's sidebar toggle in the top-left corner */
-	left: calc(var(--app-navigation-padding, 8px) * 2 + var(--default-clickable-area, 34px));
-	right: 12px;
-	max-width: 480px;
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	padding: 4px;
-	border-radius: var(--border-radius-pill, 24px);
-	z-index: 2;
-}
-
-.ls-map-topbar-text {
-	flex: 1;
-	min-width: 0;
-	display: flex;
-	flex-direction: column;
-	line-height: 1.25;
-}
-
-.ls-map-title {
-	font-weight: 600;
-	font-size: 15px;
-	color: var(--color-main-text, #222);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.ls-map-subtitle {
-	font-size: 12px;
-	color: var(--color-text-maxcontrast, #767676);
-}
-
-.ls-map-buttons {
-	position: absolute;
-	right: 12px;
-	bottom: 96px;
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	z-index: 2;
-}
-
-.ls-map-btn {
-	width: 44px;
-	height: 44px;
-	min-height: 44px;
-	margin: 0;
-	padding: 0;
-	border: none;
-	border-radius: 50%;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	color: var(--color-main-text, #222);
-	cursor: pointer;
-}
-
-.ls-map-btn:hover {
-	background: var(--color-background-hover, #f5f5f5);
-}
-
-.ls-map-btn--active {
-	color: var(--color-primary-element, #0082c9);
-}
-
-/* Touch screens zoom with pinch / double tap */
-@media (pointer: coarse) {
-	.ls-map-btn--zoom {
-		display: none;
-	}
-}
-
-.ls-map-attribution {
-	position: absolute;
-	right: 12px;
-	bottom: 80px;
-	z-index: 1;
-	font-size: 10px;
-	padding: 0 4px;
-	border-radius: 3px;
-	background: rgba(255, 255, 255, .7);
-	color: #333;
-}
-
-.ls-map-attribution a {
-	color: inherit;
-	text-decoration: underline;
-}
-
-.ls-map-chips {
-	position: absolute;
-	left: 12px;
-	bottom: 12px;
-	width: fit-content;
-	max-width: calc(100% - 24px);
-	display: flex;
-	gap: 8px;
-	padding: 8px;
-	overflow-x: auto;
-	border-radius: var(--border-radius-container-large, 16px);
-	z-index: 2;
-}
-
-.ls-chip {
-	flex-shrink: 0;
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin: 0;
-	min-height: 0;
-	padding: 4px 14px 4px 4px;
-	border: 2px solid transparent;
-	border-radius: var(--border-radius-pill, 24px);
-	background: var(--color-background-dark, #f3f4f6);
-	color: var(--color-main-text, #222);
-	cursor: pointer;
-	max-width: 200px;
-}
-
-.ls-chip:hover:not(:disabled) {
-	background: var(--color-background-darker, #e5e7eb);
-}
-
-.ls-chip:disabled {
-	cursor: default;
-	opacity: 1;
-}
-
-.ls-chip--selected {
-	border-color: #f59e0b;
-	background: var(--color-primary-element-light, #e6f3fa);
-}
-
-.ls-chip-avatar {
-	width: 36px;
-	height: 36px;
-	border-radius: 50%;
-	flex-shrink: 0;
-	object-fit: cover;
-}
-
-.ls-chip-avatar--initial {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: var(--color-primary, #0082c9);
-	color: #fff;
-	font-weight: 600;
-	font-size: 15px;
-}
-
-.ls-chip-avatar--idle {
-	filter: grayscale(100%);
-	opacity: .5;
-}
-
-.ls-chip-text {
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	min-width: 0;
-	line-height: 1.2;
-}
-
-.ls-chip-name {
-	font-weight: 600;
-	font-size: 14px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	max-width: 140px;
-}
-
-.ls-chip-time {
-	font-size: 11px;
-	color: var(--color-text-maxcontrast, #767676);
 }
 
 /* Group settings dialog */
@@ -1384,126 +844,5 @@ export default {
 
 .ls-member-status--inactive {
 	background: var(--color-border-dark, #c8c8c8);
-}
-
-/* MapLibre popup reset — Nextcloud global styles can collapse the content */
-.maplibregl-popup-content {
-	padding: 10px 14px !important;
-	border-radius: 8px !important;
-	box-shadow: 0 2px 8px rgba(0,0,0,.2) !important;
-	font-size: inherit !important;
-	line-height: inherit !important;
-}
-
-.ls-popup-row {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 4px 2px;
-}
-
-.ls-popup-avatar {
-	width: 32px;
-	height: 32px;
-	border-radius: 50%;
-	object-fit: cover;
-	flex-shrink: 0;
-}
-
-.ls-popup-avatar--initial {
-	background: var(--color-primary, #0082c9);
-	color: #fff;
-	font-size: 14px;
-	font-weight: 600;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.ls-popup-info {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
-}
-
-.ls-popup-name {
-	font-size: 13px;
-	font-weight: 600;
-	color: var(--color-main-text, #222);
-	white-space: nowrap;
-}
-
-.ls-popup-meta {
-	font-size: 11px;
-	color: var(--color-text-maxcontrast, #767676);
-}
-
-.ls-popup-groups {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
-	padding: 0 2px 2px;
-	max-width: 220px;
-}
-
-.ls-popup-group-chip {
-	font-size: 11px;
-	font-weight: 600;
-	padding: 3px 8px;
-	border: none;
-	border-radius: var(--border-radius-pill, 100px);
-	background: var(--color-primary-light, #e3f0f9);
-	color: var(--color-primary, #0082c9);
-	cursor: pointer;
-}
-
-.ls-popup-group-chip:hover {
-	background: var(--color-primary, #0082c9);
-	color: var(--color-primary-text, #fff);
-}
-
-/* Map markers */
-.ls-marker {
-	width: 36px;
-	height: 36px;
-	border-radius: 50%;
-	border: 2px solid #fff;
-	box-shadow: 0 1px 4px rgba(0, 0, 0, .4);
-	background: var(--color-primary, #0082c9);
-	color: #fff;
-	font-size: 15px;
-	font-weight: 600;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	overflow: hidden;
-}
-
-.ls-marker--me {
-	border-color: var(--color-primary, #0082c9);
-	border-width: 3px;
-}
-
-.ls-marker--stale {
-	filter: grayscale(100%);
-	opacity: 0.5;
-	transition: filter 0.4s, opacity 0.4s;
-}
-
-.ls-marker--focused {
-	/* On top when people are in the same place (e.g. a family at home) */
-	z-index: 2;
-	border-color: #f59e0b;
-	border-width: 3px;
-	width: 42px;
-	height: 42px;
-}
-
-.ls-marker img {
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
 }
 </style>
