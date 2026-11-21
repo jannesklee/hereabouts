@@ -38,7 +38,8 @@ import {
 } from './api';
 import { startSharing, stopSharing, isSharing } from './locationTask';
 import { loadNicknames, setNickname, type Nicknames } from './nicknames';
-import GroupMap from './GroupMap';
+import GroupMapScreen from './GroupMapScreen';
+import { formatLastSeen } from './format';
 
 interface Props {
   config: AppConfig;
@@ -416,6 +417,33 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
   const openGroup = groups.find((g) => g.id === openGroupId) ?? null;
   const openGuestLink = config.guestLinks.find((l) => l.token === openGuestToken) ?? null;
 
+  if (openGroup) {
+    return (
+      <GroupMapScreen
+        title={displayName(openGroup)}
+        members={openGroup.members}
+        loaded
+        onBack={() => setOpenGroupId(null)}
+        settings={
+          <GroupSettings
+            group={openGroup}
+            nickname={nicknames[openGroup.id] ?? ''}
+            copied={copiedGroupId === openGroup.id}
+            onCopyInvite={() => handleCopyGroupInvite(openGroup)}
+            onToggleSharing={() => handleToggleGroupVisibility(openGroup)}
+            onRemoveMember={(userId) => handleRemoveMember(openGroup, userId)}
+            onDeleteGroup={() => handleDeleteGroup(openGroup)}
+            onSetNickname={(value) => handleSetNickname(openGroup.id, value)}
+          />
+        }
+      />
+    );
+  }
+
+  if (openGuestLink) {
+    return <GuestMapScreen link={openGuestLink} onBack={() => setOpenGuestToken(null)} />;
+  }
+
   return (
     <SafeAreaView style={styles.root}>
       {/* Header */}
@@ -450,302 +478,286 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {openGroup ? (
-          <GroupDetail
-            group={openGroup}
-            nickname={nicknames[openGroup.id] ?? ''}
-            copied={copiedGroupId === openGroup.id}
-            onCopyInvite={() => handleCopyGroupInvite(openGroup)}
-            onBack={() => setOpenGroupId(null)}
-            onRemoveMember={(userId) => handleRemoveMember(openGroup, userId)}
-            onDeleteGroup={() => handleDeleteGroup(openGroup)}
-            onSetNickname={(value) => handleSetNickname(openGroup.id, value)}
-          />
-        ) : openGuestLink ? (
-          <GuestGroupDetail link={openGuestLink} onBack={() => setOpenGuestToken(null)} />
-        ) : (
-          <>
-            {/* ── Sharing status (read-only; derived from groups + share links) ── */}
-            <View style={styles.card}>
-              <View style={styles.sharingRow}>
-                <View
+        {/* ── Sharing status (read-only; derived from groups + share links) ── */}
+        <View style={styles.card}>
+          <View style={styles.sharingRow}>
+            <View
+              style={[
+                styles.statusDot,
+                sharing ? styles.dotGreen : styles.dotGrey,
+              ]}
+            />
+            <View style={styles.sharingTexts}>
+              <Text style={styles.sharingTitle}>
+                {sharing ? 'Sharing location' : 'Not sharing'}
+              </Text>
+              <Text style={styles.sharingSubtitle}>
+                {config.mode === 'guest'
+                  ? sharing
+                    ? `Sharing to ${config.guestLinks.filter((l) => l.enabled).length} of ${config.guestLinks.length} group${config.guestLinks.length === 1 ? '' : 's'}, updating every ~5 s`
+                    : 'Join a group below to start sharing'
+                  : sharing
+                  ? 'Visible via an active group or share link'
+                  : 'Turn on a group or create a share link to start'}
+              </Text>
+            </View>
+            {config.mode === 'guest' && !statusChecked && (
+              <ActivityIndicator color={PRIMARY} />
+            )}
+          </View>
+        </View>
+
+        {/* ── Joined groups (guest mode) ── */}
+        {config.mode === 'guest' && (
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>Groups</Text>
+            <Text style={styles.sectionNote}>
+              Paste another invite link to share your location in more than one group.
+            </Text>
+
+            {config.guestLinks.length === 0 && (
+              <Text style={styles.emptyNote}>No groups yet</Text>
+            )}
+
+            {config.guestLinks.map((link, i) => (
+              <GroupRow
+                key={link.token}
+                title={link.groupName || 'Unnamed group'}
+                members={guestMembers[link.token] ?? null}
+                shareLabel={`Share my location as ${link.name}`}
+                shareValue={link.enabled}
+                onShareChange={() => handleToggleGuestLink(link)}
+                onOpen={() => setOpenGuestToken(link.token)}
+                onLeave={() => handleRemoveGuestLink(link)}
+                bordered={i > 0}
+              />
+            ))}
+
+            <View style={[styles.newGroupRow, { marginTop: config.guestLinks.length ? 16 : 12 }]}>
+              <TextInput
+                style={styles.newGroupInput}
+                value={newGuestUrl}
+                onChangeText={setNewGuestUrl}
+                placeholder="Paste invite link to join"
+                placeholderTextColor="#aaa"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={styles.newGroupRow}>
+              <TextInput
+                style={styles.newGroupInput}
+                value={newGuestName}
+                onChangeText={setNewGuestName}
+                placeholder="Your name in this group"
+                placeholderTextColor="#aaa"
+              />
+            </View>
+            <View style={styles.durationRow}>
+              {DURATIONS.map(({ minutes, label }) => (
+                <TouchableOpacity
+                  key={minutes}
                   style={[
-                    styles.statusDot,
-                    sharing ? styles.dotGreen : styles.dotGrey,
+                    styles.durBtn,
+                    newGuestDuration === minutes && styles.durBtnActive,
                   ]}
-                />
-                <View style={styles.sharingTexts}>
-                  <Text style={styles.sharingTitle}>
-                    {sharing ? 'Sharing location' : 'Not sharing'}
+                  onPress={() => setNewGuestDuration(minutes)}
+                >
+                  <Text
+                    style={[
+                      styles.durBtnText,
+                      newGuestDuration === minutes && styles.durBtnTextActive,
+                    ]}
+                  >
+                    {label}
                   </Text>
-                  <Text style={styles.sharingSubtitle}>
-                    {config.mode === 'guest'
-                      ? sharing
-                        ? `Sharing to ${config.guestLinks.filter((l) => l.enabled).length} of ${config.guestLinks.length} group${config.guestLinks.length === 1 ? '' : 's'}, updating every ~5 s`
-                        : 'Join a group below to start sharing'
-                      : sharing
-                      ? 'Visible via an active group or share link'
-                      : 'Turn on a group or create a share link to start'}
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.createBtn,
+                (!newGuestUrl.trim() || !newGuestName.trim() || joiningGuestLink) &&
+                  styles.createBtnDisabled,
+              ]}
+              onPress={handleAddGuestLink}
+              disabled={!newGuestUrl.trim() || !newGuestName.trim() || joiningGuestLink}
+            >
+              {joiningGuestLink ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.createBtnText}>+ Join group</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Share links (authenticated only) ── */}
+        {config.mode === 'nextcloud' && (
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>Share my location</Text>
+            <Text style={styles.sectionNote}>
+              A temporary link anyone can open to watch, no account needed.
+            </Text>
+
+            <View style={styles.durationRow}>
+              {DURATIONS.map(({ minutes, label }) => (
+                <TouchableOpacity
+                  key={minutes}
+                  style={[
+                    styles.durBtn,
+                    shareMinutes === minutes && styles.durBtnActive,
+                  ]}
+                  onPress={() => setShareMinutes(minutes)}
+                >
+                  <Text
+                    style={[
+                      styles.durBtnText,
+                      shareMinutes === minutes && styles.durBtnTextActive,
+                    ]}
+                  >
+                    {label}
                   </Text>
-                </View>
-                {config.mode === 'guest' && !statusChecked && (
-                  <ActivityIndicator color={PRIMARY} />
-                )}
-              </View>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            {/* ── Joined groups (guest mode) ── */}
-            {config.mode === 'guest' && (
-              <View style={styles.card}>
-                <Text style={styles.sectionLabel}>Groups</Text>
-                <Text style={styles.sectionNote}>
-                  Paste another invite link to share your location in more than one group.
+            <TouchableOpacity
+              style={[styles.createBtn, creatingShare && styles.createBtnDisabled]}
+              onPress={handleCreateShare}
+              disabled={creatingShare}
+            >
+              {creatingShare ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.createBtnText}>+ Create share link</Text>
+              )}
+            </TouchableOpacity>
+
+            {shares.length > 0 && (
+              <>
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>
+                  Active links
                 </Text>
-
-                {config.guestLinks.length === 0 && (
-                  <Text style={styles.emptyNote}>No groups yet</Text>
-                )}
-
-                {config.guestLinks.map((link, i) => (
-                  <GroupRow
-                    key={link.token}
-                    title={link.groupName || 'Unnamed group'}
-                    members={guestMembers[link.token] ?? null}
-                    shareLabel={`Share my location as ${link.name}`}
-                    shareValue={link.enabled}
-                    onShareChange={() => handleToggleGuestLink(link)}
-                    onOpen={() => setOpenGuestToken(link.token)}
-                    onLeave={() => handleRemoveGuestLink(link)}
-                    bordered={i > 0}
+                {shares.map((share) => (
+                  <ShareRow
+                    key={share.id}
+                    share={share}
+                    copied={copiedId === share.id}
+                    onCopy={() => handleCopy(share)}
+                    onRevoke={() => handleRevoke(share)}
                   />
                 ))}
-
-                <View style={[styles.newGroupRow, { marginTop: config.guestLinks.length ? 16 : 12 }]}>
-                  <TextInput
-                    style={styles.newGroupInput}
-                    value={newGuestUrl}
-                    onChangeText={setNewGuestUrl}
-                    placeholder="Paste invite link to join"
-                    placeholderTextColor="#aaa"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-                <View style={styles.newGroupRow}>
-                  <TextInput
-                    style={styles.newGroupInput}
-                    value={newGuestName}
-                    onChangeText={setNewGuestName}
-                    placeholder="Your name in this group"
-                    placeholderTextColor="#aaa"
-                  />
-                </View>
-                <View style={styles.durationRow}>
-                  {DURATIONS.map(({ minutes, label }) => (
-                    <TouchableOpacity
-                      key={minutes}
-                      style={[
-                        styles.durBtn,
-                        newGuestDuration === minutes && styles.durBtnActive,
-                      ]}
-                      onPress={() => setNewGuestDuration(minutes)}
-                    >
-                      <Text
-                        style={[
-                          styles.durBtnText,
-                          newGuestDuration === minutes && styles.durBtnTextActive,
-                        ]}
-                      >
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.createBtn,
-                    (!newGuestUrl.trim() || !newGuestName.trim() || joiningGuestLink) &&
-                      styles.createBtnDisabled,
-                  ]}
-                  onPress={handleAddGuestLink}
-                  disabled={!newGuestUrl.trim() || !newGuestName.trim() || joiningGuestLink}
-                >
-                  {joiningGuestLink ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.createBtnText}>+ Join group</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+              </>
             )}
+          </View>
+        )}
 
-            {/* ── Share links (authenticated only) ── */}
-            {config.mode === 'nextcloud' && (
-              <View style={styles.card}>
-                <Text style={styles.sectionLabel}>Share my location</Text>
-                <Text style={styles.sectionNote}>
-                  A temporary link anyone can open to watch, no account needed.
-                </Text>
+        {/* ── Groups overview (authenticated only) ── */}
+        {config.mode === 'nextcloud' && (
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>Groups</Text>
+            <Text style={styles.sectionNote}>
+              Everyone in a group can see each other's location.
+            </Text>
 
-                <View style={styles.durationRow}>
-                  {DURATIONS.map(({ minutes, label }) => (
-                    <TouchableOpacity
-                      key={minutes}
-                      style={[
-                        styles.durBtn,
-                        shareMinutes === minutes && styles.durBtnActive,
-                      ]}
-                      onPress={() => setShareMinutes(minutes)}
-                    >
-                      <Text
-                        style={[
-                          styles.durBtnText,
-                          shareMinutes === minutes && styles.durBtnTextActive,
-                        ]}
-                      >
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+            {groups.length === 0 &&
+              (groupsLoaded ? (
+                <View style={styles.emptyGroups}>
+                  <Text style={styles.emptyGroupsTitle}>No groups yet</Text>
+                  <Text style={styles.emptyGroupsText}>
+                    Create a group and send invite links, or paste an invite link from someone else.
+                  </Text>
                 </View>
+              ) : groupsFailed ? (
+                <View style={styles.retryBlock}>
+                  <Text style={styles.retryNote}>Couldn't reach the server.</Text>
+                  <TouchableOpacity style={styles.retryBtn} onPress={loadGroups}>
+                    <Text style={styles.retryBtnText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <Text style={styles.emptyNote}>Loading…</Text>
+              ))}
 
-                <TouchableOpacity
-                  style={[styles.createBtn, creatingShare && styles.createBtnDisabled]}
-                  onPress={handleCreateShare}
-                  disabled={creatingShare}
-                >
-                  {creatingShare ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.createBtnText}>+ Create share link</Text>
-                  )}
-                </TouchableOpacity>
+            {groups.map((group, i) => (
+              <GroupRow
+                key={group.id}
+                title={displayName(group)}
+                members={group.members}
+                shareLabel="Share my location here"
+                shareValue={group.visible}
+                onShareChange={() => handleToggleGroupVisibility(group)}
+                onOpen={() => setOpenGroupId(group.id)}
+                bordered={i > 0}
+              />
+            ))}
 
-                {shares.length > 0 && (
-                  <>
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>
-                      Active links
-                    </Text>
-                    {shares.map((share) => (
-                      <ShareRow
-                        key={share.id}
-                        share={share}
-                        copied={copiedId === share.id}
-                        onCopy={() => handleCopy(share)}
-                        onRevoke={() => handleRevoke(share)}
-                      />
-                    ))}
-                  </>
+            <View style={styles.newGroupRow}>
+              <TextInput
+                style={styles.newGroupInput}
+                value={joinInviteUrl}
+                onChangeText={setJoinInviteUrl}
+                placeholder="Paste invite link to join"
+                placeholderTextColor="#aaa"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.newGroupBtn,
+                  (!joinInviteUrl.trim() || joiningGroup) && styles.createBtnDisabled,
+                ]}
+                onPress={handleJoinGroup}
+                disabled={!joinInviteUrl.trim() || joiningGroup}
+              >
+                {joiningGroup ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.newGroupBtnText}>Join</Text>
                 )}
-              </View>
-            )}
+              </TouchableOpacity>
+            </View>
 
-            {/* ── Groups overview (authenticated only) ── */}
-            {config.mode === 'nextcloud' && (
-              <View style={styles.card}>
-                <Text style={styles.sectionLabel}>Groups</Text>
-                <Text style={styles.sectionNote}>
-                  Everyone in a group can see each other's location.
-                </Text>
-
-                {groups.length === 0 &&
-                  (groupsLoaded ? (
-                    <View style={styles.emptyGroups}>
-                      <Text style={styles.emptyGroupsTitle}>No groups yet</Text>
-                      <Text style={styles.emptyGroupsText}>
-                        Create a group and send invite links, or paste an invite link from someone else.
-                      </Text>
-                    </View>
-                  ) : groupsFailed ? (
-                    <View style={styles.retryBlock}>
-                      <Text style={styles.retryNote}>Couldn't reach the server.</Text>
-                      <TouchableOpacity style={styles.retryBtn} onPress={loadGroups}>
-                        <Text style={styles.retryBtnText}>Retry</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <Text style={styles.emptyNote}>Loading…</Text>
-                  ))}
-
-                {groups.map((group, i) => (
-                  <GroupRow
-                    key={group.id}
-                    title={displayName(group)}
-                    members={group.members}
-                    shareLabel="Share my location here"
-                    shareValue={group.visible}
-                    onShareChange={() => handleToggleGroupVisibility(group)}
-                    onOpen={() => setOpenGroupId(group.id)}
-                    bordered={i > 0}
-                  />
-                ))}
-
-                <View style={styles.newGroupRow}>
-                  <TextInput
-                    style={styles.newGroupInput}
-                    value={joinInviteUrl}
-                    onChangeText={setJoinInviteUrl}
-                    placeholder="Paste invite link to join"
-                    placeholderTextColor="#aaa"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.newGroupBtn,
-                      (!joinInviteUrl.trim() || joiningGroup) && styles.createBtnDisabled,
-                    ]}
-                    onPress={handleJoinGroup}
-                    disabled={!joinInviteUrl.trim() || joiningGroup}
-                  >
-                    {joiningGroup ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Text style={styles.newGroupBtnText}>Join</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.newGroupRow}>
-                  <TextInput
-                    style={styles.newGroupInput}
-                    value={newGroupName}
-                    onChangeText={setNewGroupName}
-                    placeholder="New group name"
-                    placeholderTextColor="#aaa"
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.newGroupBtn,
-                      (!newGroupName.trim() || creatingGroup) && styles.createBtnDisabled,
-                    ]}
-                    onPress={handleCreateGroup}
-                    disabled={!newGroupName.trim() || creatingGroup}
-                  >
-                    {creatingGroup ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Text style={styles.newGroupBtnText}>+ Create</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </>
+            <View style={styles.newGroupRow}>
+              <TextInput
+                style={styles.newGroupInput}
+                value={newGroupName}
+                onChangeText={setNewGroupName}
+                placeholder="New group name"
+                placeholderTextColor="#aaa"
+              />
+              <TouchableOpacity
+                style={[
+                  styles.newGroupBtn,
+                  (!newGroupName.trim() || creatingGroup) && styles.createBtnDisabled,
+                ]}
+                onPress={handleCreateGroup}
+                disabled={!newGroupName.trim() || creatingGroup}
+              >
+                {creatingGroup ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.newGroupBtnText}>+ Create</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ── GroupDetail ──────────────────────────────────────────────────────────────
+// ── GroupSettings ────────────────────────────────────────────────────────────
+// Contents of the settings sheet behind the map's settings button.
 
-function GroupDetail({
+function GroupSettings({
   group,
   nickname,
   copied,
   onCopyInvite,
-  onBack,
+  onToggleSharing,
   onRemoveMember,
   onDeleteGroup,
   onSetNickname,
@@ -754,109 +766,89 @@ function GroupDetail({
   nickname: string;
   copied: boolean;
   onCopyInvite: () => void;
-  onBack: () => void;
+  onToggleSharing: () => void;
   onRemoveMember: (userId: string) => void;
   onDeleteGroup: () => void;
   onSetNickname: (value: string) => void;
 }) {
   const [nicknameDraft, setNicknameDraft] = useState(nickname);
-  const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setNicknameDraft(nickname);
-  }, [group.id, nickname]);
-
-  function toggleFocus(userId: string) {
-    setFocusedUserId((cur) => (cur === userId ? null : userId));
+  // Save when the field loses focus or on Enter, and when the sheet closes
+  // (which unmounts this without necessarily blurring the field first).
+  const latest = useRef({ draft: nicknameDraft, saved: nickname, onSetNickname });
+  latest.current.draft = nicknameDraft;
+  latest.current.onSetNickname = onSetNickname;
+  function saveNickname() {
+    const { draft, saved } = latest.current;
+    if (draft.trim() === saved) return;
+    latest.current.saved = draft.trim();
+    latest.current.onSetNickname(draft);
   }
+  useEffect(() => saveNickname, []);
 
   return (
-    <>
-      <TouchableOpacity style={styles.backRow} onPress={onBack}>
-        <Text style={styles.backText}>‹ Groups</Text>
-      </TouchableOpacity>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionLabel}>{nickname || group.name}</Text>
-        <Text style={styles.sectionNote}>
-          {group.visible
-            ? "You're visible to this group."
-            : "You're hidden from this group."}
-        </Text>
-
-        <TextInput
-          style={styles.nicknameInput}
-          value={nicknameDraft}
-          onChangeText={setNicknameDraft}
-          onEndEditing={() => onSetNickname(nicknameDraft)}
-          placeholder={group.name}
-          placeholderTextColor="#aaa"
+    <View style={styles.settingsBody}>
+      <View style={styles.settingsSwitchRow}>
+        <Text style={styles.settingsSwitchLabel}>Share my location here</Text>
+        <Switch
+          value={group.visible}
+          onValueChange={onToggleSharing}
+          trackColor={{ true: PRIMARY, false: '#d1d5db' }}
+          thumbColor="#fff"
         />
-        <Text style={[styles.sectionNote, { marginTop: 4 }]}>
-          Your name for this group. Only visible to you.
-        </Text>
-
-        <View style={{ marginBottom: 14 }}>
-          <GroupMap
-            members={group.members}
-            focusedUserId={focusedUserId}
-            onSelectMember={toggleFocus}
-          />
-        </View>
-
-        {group.members.length === 0 ? (
-          <Text style={styles.emptyNote}>No positions yet</Text>
-        ) : (
-          group.members.map((m) => (
-            <MemberRow
-              key={m.userId}
-              member={m}
-              selected={m.userId === focusedUserId}
-              onSelect={() => toggleFocus(m.userId)}
-              onRemove={
-                group.isOwner && !m.isMe ? () => onRemoveMember(m.userId) : undefined
-              }
-            />
-          ))
-        )}
-
-        <View style={[styles.shareRow, { marginTop: 12 }]}>
-          <View style={styles.shareInfo}>
-            <Text style={styles.shareUrl} numberOfLines={1}>
-              {group.inviteUrl}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.iconBtn} onPress={onCopyInvite}>
-            <Text style={styles.iconText}>{copied ? '✓' : '📋'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {group.isOwner && (
-          <TouchableOpacity style={styles.deleteGroupBtn} onPress={onDeleteGroup}>
-            <Text style={styles.deleteGroupBtnText}>Delete group</Text>
-          </TouchableOpacity>
-        )}
       </View>
-    </>
+
+      <Text style={styles.settingsLabel}>Your name for this group</Text>
+      <TextInput
+        style={styles.nicknameInput}
+        value={nicknameDraft}
+        onChangeText={setNicknameDraft}
+        onEndEditing={saveNickname}
+        onSubmitEditing={saveNickname}
+        placeholder={group.name}
+        placeholderTextColor="#aaa"
+        returnKeyType="done"
+      />
+      <Text style={styles.settingsHint}>Only visible to you.</Text>
+
+      <Text style={styles.settingsLabel}>Invite link</Text>
+      <View style={styles.shareRow}>
+        <View style={styles.shareInfo}>
+          <Text style={styles.shareUrl} numberOfLines={1}>
+            {group.inviteUrl}
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.iconBtn} onPress={onCopyInvite} accessibilityLabel="Copy invite link">
+          <Text style={styles.iconText}>{copied ? '✓' : '📋'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.settingsLabel}>Members</Text>
+      {group.members.map((m) => (
+        <MemberRow
+          key={m.userId}
+          member={m}
+          onRemove={group.isOwner && !m.isMe ? () => onRemoveMember(m.userId) : undefined}
+        />
+      ))}
+
+      {group.isOwner && (
+        <TouchableOpacity style={styles.deleteGroupBtn} onPress={onDeleteGroup}>
+          <Text style={styles.deleteGroupBtnText}>Delete group</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
-// ── GuestGroupDetail ─────────────────────────────────────────────────────────
-// Guest-mode counterpart to GroupDetail - there's no group ownership/nickname/
-// invite-copy here (a guest link is just a token+name), just the map and who
-// else is currently sharing. Polls every 10s while open, matching the web
-// guest join page's join.js.
+// ── GuestMapScreen ───────────────────────────────────────────────────────────
+// Guest-mode counterpart: a guest link has no settings (no ownership, nickname
+// or invite to copy), so it's just the map. Polls every 10s while open,
+// matching the web guest join page's join.js.
 
-function GuestGroupDetail({
-  link,
-  onBack,
-}: {
-  link: GuestLink;
-  onBack: () => void;
-}) {
+function GuestMapScreen({ link, onBack }: { link: GuestLink; onBack: () => void }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -875,44 +867,13 @@ function GuestGroupDetail({
     };
   }, [link.token, link.server, link.name]);
 
-  function toggleFocus(userId: string) {
-    setFocusedUserId((cur) => (cur === userId ? null : userId));
-  }
-
   return (
-    <>
-      <TouchableOpacity style={styles.backRow} onPress={onBack}>
-        <Text style={styles.backText}>‹ Groups</Text>
-      </TouchableOpacity>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionLabel}>{link.groupName || 'Unnamed group'}</Text>
-        <Text style={styles.sectionNote}>Sharing as {link.name}</Text>
-
-        <View style={{ marginBottom: 14, marginTop: 12 }}>
-          <GroupMap
-            members={members}
-            focusedUserId={focusedUserId}
-            onSelectMember={toggleFocus}
-          />
-        </View>
-
-        {!loaded ? (
-          <ActivityIndicator color={PRIMARY} />
-        ) : members.length === 0 ? (
-          <Text style={styles.emptyNote}>No positions yet</Text>
-        ) : (
-          members.map((m) => (
-            <MemberRow
-              key={m.userId}
-              member={m}
-              selected={m.userId === focusedUserId}
-              onSelect={() => toggleFocus(m.userId)}
-            />
-          ))
-        )}
-      </View>
-    </>
+    <GroupMapScreen
+      title={link.groupName || 'Unnamed group'}
+      members={members}
+      loaded={loaded}
+      onBack={onBack}
+    />
   );
 }
 
@@ -1150,13 +1111,6 @@ function formatExpiry(expiresAt: number | null): string {
   return h > 0 ? `Expires in ${h}h ${m}m` : `Expires in ${m + 1} min`;
 }
 
-function formatLastSeen(ts: number | null): string {
-  if (ts === null) return 'No position';
-  const age = Math.floor(Date.now() / 1000) - ts;
-  if (age < 60) return 'Just now';
-  if (age < 3600) return `${Math.floor(age / 60)} min ago`;
-  return `${Math.floor(age / 3600)}h ago`;
-}
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -1271,8 +1225,24 @@ const styles = StyleSheet.create({
   stackAvatarText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   stackAvatarMoreText: { color: '#4b5563', fontWeight: '700', fontSize: 11 },
 
-  backRow: { paddingVertical: 4, paddingHorizontal: 2 },
-  backText: { fontSize: 15, fontWeight: '600', color: PRIMARY },
+  settingsBody: { paddingBottom: 8 },
+  settingsSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  settingsSwitchLabel: { fontSize: 15, color: '#111' },
+  settingsLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    color: '#9ca3af',
+    marginTop: 18,
+    marginBottom: 4,
+  },
+  settingsHint: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
 
   nicknameInput: {
     backgroundColor: '#fafafa',

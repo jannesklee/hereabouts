@@ -188,11 +188,6 @@ class GroupController extends Controller {
 	}
 
 	/**
-	 * Logged-in user accepts an invite link and joins the group.
-	 */
-	#[NoAdminRequired]
-	#[NoCSRFRequired]
-	/**
 	 * Public group name/owner lookup by invite token, for the companion app's
 	 * guest mode - it never loads the server-rendered join page (that's how
 	 * the web guest flow gets group_name/owner_display_name, see
@@ -217,6 +212,11 @@ class GroupController extends Controller {
 		]);
 	}
 
+	/**
+	 * Logged-in user accepts an invite link and joins the group.
+	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
 	public function accept(string $token): DataResponse {
 		try {
 			$group = $this->groupMapper->findByToken($token);

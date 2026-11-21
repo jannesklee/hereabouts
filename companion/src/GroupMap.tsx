@@ -1,11 +1,18 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Camera, type CameraRef, Map, Marker } from '@maplibre/maplibre-react-native';
+import {
+  Camera,
+  type CameraRef,
+  type LngLatBounds,
+  Map,
+  Marker,
+} from '@maplibre/maplibre-react-native';
 import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { Member } from './api';
 
 // Same raw-tile OSM style as the web app (src/App.vue / src/Viewer.vue) -
 // no API key, no third-party service, direct to tile.openstreetmap.org.
+// OSM's tile policy requires visible attribution; GroupMapScreen shows it.
 const MAP_STYLE: StyleSpecification = {
   version: 8,
   sources: {
@@ -13,6 +20,7 @@ const MAP_STYLE: StyleSpecification = {
       type: 'raster',
       tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
+      maxzoom: 19,
       attribution: '© OpenStreetMap contributors',
     },
   },
@@ -21,79 +29,135 @@ const MAP_STYLE: StyleSpecification = {
 
 const PRIMARY = '#0082c9';
 
-interface Props {
-  members: Member[];
-  // Centers the map on this member instead of fitting everyone in frame -
-  // set from tapping a MemberRow or a marker itself, cleared (null/undefined)
-  // to go back to the all-members overview.
-  focusedUserId?: string | null;
-  onSelectMember?: (userId: string) => void;
+// Never zoom in further than about 1 km across when fitting, so one person
+// (or two in the same house) still shows the streets around them.
+const MIN_SPAN_DEG = 0.01;
+
+export interface MapPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
 }
 
-export default function GroupMap({ members, focusedUserId, onSelectMember }: Props) {
+interface Props {
+  members: Member[];
+  // Fly to this member and keep them centred as they move. Cleared (null) to
+  // leave the camera where it is.
+  focusedUserId?: string | null;
+  onSelectMember?: (userId: string) => void;
+  // Bump to zoom out to everyone again (the screen's "everyone" button).
+  fitRequest?: number;
+  // Space covered by the screen's overlays, so markers stay visible.
+  padding: MapPadding;
+}
+
+type Positioned = Member & { lat: number; lon: number };
+
+function boundsFor(points: Positioned[]): LngLatBounds {
+  let west = Math.min(...points.map((p) => p.lon));
+  let east = Math.max(...points.map((p) => p.lon));
+  let south = Math.min(...points.map((p) => p.lat));
+  let north = Math.max(...points.map((p) => p.lat));
+  if (east - west < MIN_SPAN_DEG) {
+    const mid = (east + west) / 2;
+    west = mid - MIN_SPAN_DEG / 2;
+    east = mid + MIN_SPAN_DEG / 2;
+  }
+  if (north - south < MIN_SPAN_DEG) {
+    const mid = (north + south) / 2;
+    south = mid - MIN_SPAN_DEG / 2;
+    north = mid + MIN_SPAN_DEG / 2;
+  }
+  return [west, south, east, north];
+}
+
+export default function GroupMap({
+  members,
+  focusedUserId,
+  onSelectMember,
+  fitRequest = 0,
+  padding,
+}: Props) {
   const cameraRef = useRef<CameraRef>(null);
 
   const positioned = useMemo(
-    () => members.filter((m) => m.hasPosition && m.lat !== null && m.lon !== null),
+    () =>
+      members.filter(
+        (m): m is Positioned => m.hasPosition && m.lat !== null && m.lon !== null,
+      ),
     [members],
   );
+  const positionedRef = useRef(positioned);
+  positionedRef.current = positioned;
 
-  const boundsKey = positioned.map((m) => `${m.userId}:${m.lat},${m.lon}`).join('|');
-  const focused = focusedUserId ? positioned.find((m) => m.userId === focusedUserId) : null;
+  // Room around the markers on top of the overlay padding.
+  const fitPadding = {
+    top: padding.top + 40,
+    right: padding.right + 40,
+    bottom: padding.bottom + 40,
+    left: padding.left + 40,
+  };
 
+  // The map opens showing everyone. After that the camera only moves when the
+  // user asks (everyone button, tapping a person), never on a position update,
+  // so zooming around isn't interrupted every few seconds.
   useEffect(() => {
-    if (!cameraRef.current || positioned.length === 0) return;
-
-    if (focused) {
-      cameraRef.current.flyTo({
-        center: [focused.lon as number, focused.lat as number],
-        zoom: 15,
-        duration: 500,
-      });
-      return;
-    }
-
-    if (positioned.length === 1) {
-      cameraRef.current.flyTo({
-        center: [positioned[0].lon as number, positioned[0].lat as number],
-        zoom: 13,
-        duration: 500,
-      });
-      return;
-    }
-
-    const lons = positioned.map((m) => m.lon as number);
-    const lats = positioned.map((m) => m.lat as number);
-    cameraRef.current.fitBounds(
-      [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)],
-      { padding: { top: 40, right: 40, bottom: 40, left: 40 }, duration: 500 },
-    );
+    const points = positionedRef.current;
+    if (fitRequest === 0 || !cameraRef.current || points.length === 0) return;
+    cameraRef.current.fitBounds(boundsFor(points), { padding: fitPadding, duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boundsKey, focused?.userId]);
+  }, [fitRequest]);
+
+  // Following a person: fly to them once, then keep them centred as they move.
+  const focused = focusedUserId ? positioned.find((m) => m.userId === focusedUserId) : null;
+  const followingRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focused || !cameraRef.current) {
+      followingRef.current = null;
+      return;
+    }
+    const center: [number, number] = [focused.lon, focused.lat];
+    if (followingRef.current !== focused.userId) {
+      cameraRef.current.flyTo({ center, zoom: 15, padding, duration: 700 });
+    } else {
+      cameraRef.current.easeTo({ center, padding, duration: 500 });
+    }
+    followingRef.current = focused.userId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focused?.userId, focused?.lat, focused?.lon]);
 
   if (positioned.length === 0) {
     return (
       <View style={[styles.map, styles.empty]}>
-        <Text style={styles.emptyText}>No positions to show yet</Text>
+        <Text style={styles.emptyText}>Nobody in this group is sharing right now</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.map}>
-      <Map style={styles.map} mapStyle={MAP_STYLE} logo={false} attribution={false}>
-        <Camera
-          ref={cameraRef}
-          initialViewState={{
-            center: [positioned[0].lon as number, positioned[0].lat as number],
-            zoom: 13,
-          }}
-        />
-        {positioned.map((m) => (
+    <Map
+      style={styles.map}
+      mapStyle={MAP_STYLE}
+      logo={false}
+      attribution={false}
+      compassPosition={{ top: padding.top + 8, right: 12 }}
+    >
+      <Camera
+        ref={cameraRef}
+        maxZoom={19}
+        initialViewState={{ bounds: boundsFor(positioned), padding: fitPadding }}
+      />
+      {/* The selected person's marker must be on top when people are in the
+          same place (e.g. a family at home). The native map stacks markers in
+          the order they were added, so a new key re-adds it as the topmost. */}
+      {[...positioned]
+        .sort((a, b) => Number(a.userId === focusedUserId) - Number(b.userId === focusedUserId))
+        .map((m) => (
           <Marker
-            key={m.userId}
+            key={m.userId === focusedUserId ? `${m.userId}:selected` : m.userId}
             id={m.userId}
-            lngLat={[m.lon as number, m.lat as number]}
+            lngLat={[m.lon, m.lat]}
             onPress={() => onSelectMember?.(m.userId)}
           >
             <View
@@ -107,23 +171,23 @@ export default function GroupMap({ members, focusedUserId, onSelectMember }: Pro
             </View>
           </Marker>
         ))}
-      </Map>
-    </View>
+    </Map>
   );
 }
 
 const styles = StyleSheet.create({
-  map: { width: '100%', height: 220, borderRadius: 14, overflow: 'hidden' },
+  map: { flex: 1 },
   empty: {
-    backgroundColor: '#f0f4f8',
+    backgroundColor: '#e5e7eb',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 32,
   },
-  emptyText: { fontSize: 13, color: '#9ca3af' },
+  emptyText: { fontSize: 14, color: '#6b7280', textAlign: 'center' },
   marker: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 2,
     borderColor: '#fff',
     backgroundColor: PRIMARY,
@@ -135,13 +199,13 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 3,
   },
-  markerMe: { borderColor: PRIMARY, borderWidth: 3 },
+  markerMe: { borderColor: '#bfe3f7', borderWidth: 3 },
   markerFocused: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderColor: '#f59e0b',
     borderWidth: 3,
   },
-  markerText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  markerText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

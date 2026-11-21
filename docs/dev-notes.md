@@ -158,3 +158,16 @@ Starting the companion with `CI=1 npx expo run:android` (or `expo start`) makes 
 **Cause:** the companion built URLs as `{server}/apps/hereabouts/...`, without `/index.php`. On an Apache server without pretty URLs (no `htaccess.RewriteBase`), such a URL is not a file, so Apache serves its `ErrorDocument 404`, which points into `index.php`. Nextcloud then routes the original path, so it *seems* to work, but Apache always makes error-document requests a GET. GET routes work; POST routes arrive as GET and the router answers 405. Proof: without `/index.php`, a POST to the GET-only `/api/groups` gets 401 (accepted as GET); with `/index.php`, the same POST gets 405. The Docker dev container has pretty URLs on, so it never showed up there.
 
 **Fix:** `companion/src/api.ts` builds every URL with `appUrl()`, which always inserts `/index.php/apps/hereabouts`. That works on every server. `parseInviteUrl` now keeps a subpath (`https://example.com/nextcloud`) and drops `index.php`, which `appUrl()` adds back. The web frontend isn't affected: `generateUrl()` adds `index.php` itself when needed. Any future client code that builds Nextcloud URLs by hand must include `/index.php` too.
+
+## Joining a group from the web join page failed for non-admins (2026-11-21)
+
+**Symptom:** a logged-in Nextcloud user opening an invite link and clicking "Join group" got "Couldn't join the group. Check your connection and try again."
+
+**Cause:** commit b79523b (2026-09-13) inserted the new `GroupController::info()` method *between* `accept()`'s `#[NoAdminRequired]` / `#[NoCSRFRequired]` attributes and `accept()` itself. From then on those attributes belonged to `info()` (which had its own copies too), and `accept()` had none, so it became admin-only and required a CSRF token. The join page's `fetch(ACCEPT_URL, {method: 'POST'})` sends no token, so it failed for every web user. It stayed hidden because the Docker dev env tests as `admin`, and the companion app's join passes the CSRF check anyway: Nextcloud treats requests with an `OCS-APIRequest` header as passing it.
+
+**Fix:** moved the attributes (and `accept()`'s docblock) back. When adding a controller method, insert it *above* the previous method's docblock and attributes, never directly above its `public function` line. To audit, list every controller method with its attributes and look for one without `NoAdminRequired`. Test web flows as a non-admin user too.
+
+## Companion map: marker stacking and hot reload (2026-11-21)
+
+- **Marker stacking:** `@maplibre/maplibre-react-native` (v11) draws `<Marker>`s in the order they were *added* to the native map. Reordering the React children doesn't change it. When two people are at the same spot, the selected person's marker would stay hidden. `GroupMap.tsx` gives the selected marker a different `key`, so React removes it and adds it again as the topmost one.
+- **Hot reload:** a Fast Refresh that touches a file importing the MapLibre module fails with `Invariant Violation: Tried to register two views with the same name MLRNVectorSource`. Not a code bug: do a full reload (reopen the dev-client deep link, or `r` in Metro).
