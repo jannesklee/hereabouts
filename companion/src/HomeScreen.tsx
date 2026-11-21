@@ -62,6 +62,9 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
   const [statusChecked, setStatusChecked] = useState(false);
   const [groups, setGroups] = useState<GroupWithMembers[]>([]);
   const [groupsFailed, setGroupsFailed] = useState(false);
+  // True once the server has answered at least once, so an empty list means
+  // "no groups" rather than "still loading".
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [openGroupId, setOpenGroupId] = useState<number | null>(null);
   const [openGuestToken, setOpenGuestToken] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
@@ -97,6 +100,7 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
       resp.groups.map(async (g) => ({ ...g, members: await fetchMembers(config, g.id) })),
     );
     setGroups(withMembers);
+    setGroupsLoaded(true);
   }, [config]);
 
   const refreshShares = useCallback(async () => {
@@ -644,18 +648,24 @@ export default function HomeScreen({ config, onConfigChange, onReconfigure }: Pr
                   Everyone in a group can see each other's location.
                 </Text>
 
-                {groups.length === 0 && !groupsFailed && (
-                  <Text style={styles.emptyNote}>Loading…</Text>
-                )}
-
-                {groups.length === 0 && groupsFailed && (
-                  <View style={styles.retryBlock}>
-                    <Text style={styles.retryNote}>Couldn't reach the server.</Text>
-                    <TouchableOpacity style={styles.retryBtn} onPress={loadGroups}>
-                      <Text style={styles.retryBtnText}>Retry</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                {groups.length === 0 &&
+                  (groupsLoaded ? (
+                    <View style={styles.emptyGroups}>
+                      <Text style={styles.emptyGroupsTitle}>No groups yet</Text>
+                      <Text style={styles.emptyGroupsText}>
+                        Create a group and send invite links, or paste an invite link from someone else.
+                      </Text>
+                    </View>
+                  ) : groupsFailed ? (
+                    <View style={styles.retryBlock}>
+                      <Text style={styles.retryNote}>Couldn't reach the server.</Text>
+                      <TouchableOpacity style={styles.retryBtn} onPress={loadGroups}>
+                        <Text style={styles.retryBtnText}>Retry</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Text style={styles.emptyNote}>Loading…</Text>
+                  ))}
 
                 {groups.map((group, i) => (
                   <GroupRow
@@ -1362,6 +1372,9 @@ const styles = StyleSheet.create({
   deleteGroupBtnText: { fontSize: 13, fontWeight: '600', color: '#dc2626' },
 
   emptyNote: { fontSize: 14, color: '#9ca3af', textAlign: 'center', paddingVertical: 8 },
+  emptyGroups: { alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 8 },
+  emptyGroupsTitle: { fontSize: 15, fontWeight: '600', color: '#374151' },
+  emptyGroupsText: { fontSize: 13, color: '#6b7280', textAlign: 'center', lineHeight: 18 },
 
   retryBlock: { alignItems: 'center', paddingVertical: 8, gap: 10 },
   retryNote: { fontSize: 14, color: '#dc2626' },
