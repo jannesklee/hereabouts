@@ -89,6 +89,7 @@ import GuestLive from './GuestLive.vue'
 		var sharingView = document.getElementById('ls-sharing-view')
 		var stoppedView = document.getElementById('ls-stopped-view')
 		var errorView = document.getElementById('ls-error-view')
+		var removedView = document.getElementById('ls-removed-view')
 		var nameInput = document.getElementById('ls-name-input')
 		var startBtn = document.getElementById('ls-start-btn')
 		var fakeBtn = document.getElementById('ls-fake-btn')
@@ -109,6 +110,15 @@ import GuestLive from './GuestLive.vue'
 		var currentName = null
 		var liveApp = null
 		var hintTimer = null
+		// Last GPS fix, re-sent every HEARTBEAT_MS: the browser only reports
+		// a position when it changes, and the server drops guests it hasn't
+		// heard from for 15 minutes (Application::INACTIVE_AFTER).
+		var HEARTBEAT_MS = 30000
+		var lastFix = null
+		var heartbeatTimer = null
+		// Sent with the first update after pressing Start, so a guest the owner
+		// removed can deliberately join again (PositionController::guestUpdate)
+		var rejoinNext = false
 		// Read by the live map's top bar (GuestLive.vue)
 		var sharing = reactive({ status: null, expiresAt: null, sends: 0 })
 
@@ -153,7 +163,7 @@ import GuestLive from './GuestLive.vue'
 		}
 
 		function showView(view) {
-			[formView, sharingView, stoppedView, errorView].forEach(function (v) {
+			[formView, sharingView, stoppedView, errorView, removedView].forEach(function (v) {
 				if (v) v.style.display = 'none'
 			})
 			if (view) view.style.display = 'flex'
@@ -176,16 +186,36 @@ import GuestLive from './GuestLive.vue'
 			if (acc !== undefined && acc !== null) params.append('acc', acc)
 			if (selectedMinutes > 0) params.append('duration', selectedMinutes)
 			params.append('timestamp', Math.floor(Date.now() / 1000))
+			if (rejoinNext) params.append('rejoin', '1')
 
 			fetch(guestUpdateUrl + '?' + params.toString(), { method: 'POST' })
 				.then(function (r) {
+					// Answer to a request from a sharing session that has ended
+					if (name !== currentName) return
+					if (r.status === 403) {
+						return r.json().catch(function () { return {} }).then(function (body) {
+							if (body && body.error === 'removed') {
+								wasRemoved()
+								return
+							}
+							throw new Error('HTTP 403')
+						})
+					}
 					if (!r.ok) throw new Error('HTTP ' + r.status)
+					rejoinNext = false
 					sharing.status = null
 					sharing.sends++
 				})
 				.catch(function () {
-					sharing.status = 'Failed to send. Retrying…'
+					if (name === currentName) sharing.status = 'Failed to send. Retrying…'
 				})
+		}
+
+		// The owner removed this guest: stop everything. No stop request, the
+		// server already knows.
+		function wasRemoved() {
+			stopSharing(false, true)
+			showView(removedView)
 		}
 
 		// Sharing ends by itself at the chosen time (the top bar shows how long
@@ -219,7 +249,7 @@ import GuestLive from './GuestLive.vue'
 			}
 		}
 
-		function stopSharing(showStopped) {
+		function stopSharing(showStopped, silent) {
 			hideLiveMap()
 			if (watchId !== null) {
 				fakeMode ? clearInterval(watchId) : navigator.geolocation.clearWatch(watchId)
@@ -227,7 +257,10 @@ import GuestLive from './GuestLive.vue'
 			}
 			fakeMode = false
 			fakeCity = null
+			lastFix = null
+			if (heartbeatTimer !== null) { clearInterval(heartbeatTimer); heartbeatTimer = null }
 			if (countdownTimer !== null) { clearInterval(countdownTimer); countdownTimer = null }
+			if (silent) currentName = null
 			if (currentName) {
 				var params = new URLSearchParams({ name: currentName, stop: '1' })
 				fetch(GUEST_UPDATE_URL + '?' + params.toString(), { method: 'POST' })
@@ -245,6 +278,7 @@ import GuestLive from './GuestLive.vue'
 			sharing.status = useFake ? 'Starting fake location…' : 'Waiting for GPS fix…'
 			sharing.expiresAt = expiresAt
 			sharing.sends = 0
+			rejoinNext = true
 
 			showView(sharingView)
 			showLiveMap()
@@ -264,7 +298,8 @@ import GuestLive from './GuestLive.vue'
 			} else {
 				watchId = navigator.geolocation.watchPosition(
 					function (pos) {
-						sendPosition(guestUpdateUrl, name, pos.coords.latitude, pos.coords.longitude, pos.coords.altitude, pos.coords.accuracy)
+						lastFix = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude, acc: pos.coords.accuracy }
+						sendPosition(guestUpdateUrl, name, lastFix.lat, lastFix.lon, lastFix.alt, lastFix.acc)
 					},
 					function (err) {
 						stopSharing(false)
@@ -273,6 +308,9 @@ import GuestLive from './GuestLive.vue'
 					},
 					{ enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
 				)
+				heartbeatTimer = setInterval(function () {
+					if (lastFix) sendPosition(guestUpdateUrl, name, lastFix.lat, lastFix.lon, lastFix.alt, lastFix.acc)
+				}, HEARTBEAT_MS)
 			}
 
 			if (expiresAt) {

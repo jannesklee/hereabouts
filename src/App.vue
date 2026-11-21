@@ -202,8 +202,9 @@
 							<NcButton
 								v-if="openGroup.isOwner && !member.isMe"
 								variant="tertiary"
-								aria-label="Remove member"
-								@click="removeGroupMember(openGroup, member.userId)">
+								:aria-label="'Remove ' + member.displayName"
+								:title="'Remove ' + member.displayName"
+								@click="removeGroupMember(openGroup, member)">
 								<template #icon>
 									<DeleteIcon :size="16" />
 								</template>
@@ -445,12 +446,15 @@ export default {
 			}
 		},
 
-		async removeGroupMember(group, userId) {
+		// Works for guests too (userId "guest_<id>"): their open invite page
+		// stops sharing. Either can come back through the invite link.
+		async removeGroupMember(group, member) {
+			if (!confirm(`Remove ${member.displayName} from "${group.name}"? They can join again with the invite link.`)) return
 			try {
 				await axios.post(
-					generateUrl('/apps/hereabouts/group/' + group.id + '/members/' + encodeURIComponent(userId) + '/remove'),
+					generateUrl('/apps/hereabouts/group/' + group.id + '/members/' + encodeURIComponent(member.userId) + '/remove'),
 				)
-				group.members = group.members.filter((m) => m.userId !== userId)
+				group.members = group.members.filter((m) => m.userId !== member.userId)
 			} catch (e) {
 				console.error('Failed to remove group member', e)
 			}

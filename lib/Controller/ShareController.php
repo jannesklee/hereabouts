@@ -2,6 +2,7 @@
 
 namespace OCA\Hereabouts\Controller;
 
+use OCA\Hereabouts\AppInfo\Application;
 use OCA\Hereabouts\Db\Share;
 use OCA\Hereabouts\Db\ShareMapper;
 use OCA\Hereabouts\Db\PositionMapper;
@@ -96,20 +97,26 @@ class ShareController extends Controller {
 
 		try {
 			$pos = $this->positionMapper->findByUserId($share->getOwnerUserId());
-			return new DataResponse([
-				'lat' => $pos->getLat(),
-				'lon' => $pos->getLon(),
-				'acc' => $pos->getAcc(),
-				'updatedAt' => $pos->getUpdatedAt(),
-				'hasPosition' => true,
-				'expiresAt' => $share->getExpiresAt(),
-			]);
 		} catch (DoesNotExistException $e) {
+			$pos = null;
+		}
+
+		// No update for a while counts as not sharing, same rule as in groups
+		if ($pos === null || $pos->getUpdatedAt() < time() - Application::INACTIVE_AFTER) {
 			return new DataResponse([
 				'hasPosition' => false,
 				'expiresAt' => $share->getExpiresAt(),
 			]);
 		}
+
+		return new DataResponse([
+			'lat' => $pos->getLat(),
+			'lon' => $pos->getLon(),
+			'acc' => $pos->getAcc(),
+			'updatedAt' => $pos->getUpdatedAt(),
+			'hasPosition' => true,
+			'expiresAt' => $share->getExpiresAt(),
+		]);
 	}
 
 	private function formatShare(Share $share): array {

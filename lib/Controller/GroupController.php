@@ -2,6 +2,7 @@
 
 namespace OCA\Hereabouts\Controller;
 
+use OCA\Hereabouts\AppInfo\Application;
 use OCA\Hereabouts\Db\Group;
 use OCA\Hereabouts\Db\GroupMapper;
 use OCA\Hereabouts\Db\GroupMember;
@@ -115,9 +116,14 @@ class GroupController extends Controller {
 	}
 
 	/**
-	 * Removes another member from a group the current user owns. The owner
-	 * can't remove themselves this way - use delete() to remove the whole
-	 * group instead.
+	 * Removes someone else from a group the current user owns: a member, or
+	 * a guest by the "guest_<id>" userId the positions API gives them. The
+	 * owner can't remove themselves this way - use delete() to remove the
+	 * whole group instead.
+	 *
+	 * Either can come back through the invite link. A removed guest's open
+	 * page is told so on its next update (PositionController::guestUpdate)
+	 * and stops, instead of re-adding them.
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
@@ -135,9 +141,31 @@ class GroupController extends Controller {
 			return new DataResponse(['error' => 'cannot_remove_owner'], Http::STATUS_BAD_REQUEST);
 		}
 
-		$this->groupMemberMapper->deleteByGroupAndUser($id, $userId);
+		if ($this->groupMemberMapper->isMember($id, $userId)) {
+			$this->groupMemberMapper->deleteByGroupAndUser($id, $userId);
+			return new DataResponse([]);
+		}
 
-		return new DataResponse([]);
+		if (preg_match('/^guest_(\d+)$/', $userId, $m) === 1) {
+			try {
+				$guest = $this->guestMapper->findByGroupAndId($id, (int)$m[1]);
+			} catch (DoesNotExistException $e) {
+				// Already gone (stopped sharing or cleaned up)
+				return new DataResponse([]);
+			}
+			// Keep the row as a marker, but without the position
+			$guest->setRemovedAt(time());
+			$guest->setLat(null);
+			$guest->setLon(null);
+			$guest->setAcc(null);
+			$guest->setAlt(null);
+			$guest->setSpeed(null);
+			$guest->setBearing(null);
+			$this->guestMapper->update($guest);
+			return new DataResponse([]);
+		}
+
+		return new DataResponse(['error' => 'not_found'], Http::STATUS_NOT_FOUND);
 	}
 
 	/**
@@ -286,6 +314,9 @@ class GroupController extends Controller {
 			$positionMap[$pos->getUserId()] = $pos;
 		}
 
+		// Older updates count as "not sharing anymore"
+		$activeSince = time() - Application::INACTIVE_AFTER;
+
 		$result = [];
 		foreach ($members as $member) {
 			$uid = $member->getUserId();
@@ -293,6 +324,9 @@ class GroupController extends Controller {
 			// A member can hide their position from this specific group without
 			// affecting any other group or share link they're part of.
 			$pos = $member->getVisible() ? ($positionMap[$uid] ?? null) : null;
+			if ($pos !== null && $pos->getUpdatedAt() < $activeSince) {
+				$pos = null;
+			}
 
 			$result[] = [
 				'type' => 'user',
@@ -309,7 +343,7 @@ class GroupController extends Controller {
 		}
 
 		// Active guests
-		foreach ($this->guestMapper->findActiveByGroup($groupId) as $guest) {
+		foreach ($this->guestMapper->findActiveByGroup($groupId, $activeSince) as $guest) {
 			if ($guest->getLat() === null) {
 				continue;
 			}

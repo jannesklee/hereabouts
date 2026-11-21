@@ -17,13 +17,21 @@ class GuestMapper extends QBMapper {
 		parent::__construct($db, 'hereabouts_guests', Guest::class);
 	}
 
-	/** @return Guest[] */
-	public function findActiveByGroup(int $groupId): array {
+	/**
+	 * Guests currently in the group: not expired, not removed by the owner,
+	 * and with a position update at or after $activeSince (someone who closed
+	 * the page without pressing Stop drops out once that's too long ago).
+	 *
+	 * @return Guest[]
+	 */
+	public function findActiveByGroup(int $groupId, int $activeSince): array {
 		$now = time();
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from($this->getTableName())
 			->where($qb->expr()->eq('group_id', $qb->createNamedParameter($groupId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->isNull('removed_at'))
+			->andWhere($qb->expr()->gte('updated_at', $qb->createNamedParameter($activeSince, IQueryBuilder::PARAM_INT)))
 			->andWhere(
 				$qb->expr()->orX(
 					$qb->expr()->isNull('expires_at'),
@@ -31,6 +39,16 @@ class GuestMapper extends QBMapper {
 				)
 			);
 		return $this->findEntities($qb);
+	}
+
+	/** @throws DoesNotExistException */
+	public function findByGroupAndId(int $groupId, int $id): Guest {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('group_id', $qb->createNamedParameter($groupId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('id', $qb->createNamedParameter($id, IQueryBuilder::PARAM_INT)));
+		return $this->findEntity($qb);
 	}
 
 	/** @throws DoesNotExistException */
@@ -63,6 +81,32 @@ class GuestMapper extends QBMapper {
 		$qb->delete($this->getTableName())
 			->where($qb->expr()->isNotNull('expires_at'))
 			->andWhere($qb->expr()->lte('expires_at', $qb->createNamedParameter(time(), IQueryBuilder::PARAM_INT)));
+		return $qb->executeStatement();
+	}
+
+	/**
+	 * Guests whose last update is older than $before (they left without
+	 * pressing Stop). Leaves removed guests alone: see deleteRemovedBefore().
+	 */
+	public function deleteInactive(int $before): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete($this->getTableName())
+			->where($qb->expr()->isNull('removed_at'))
+			->andWhere(
+				$qb->expr()->orX(
+					$qb->expr()->isNull('updated_at'),
+					$qb->expr()->lt('updated_at', $qb->createNamedParameter($before, IQueryBuilder::PARAM_INT))
+				)
+			);
+		return $qb->executeStatement();
+	}
+
+	/** Guests the owner removed before $before. */
+	public function deleteRemovedBefore(int $before): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete($this->getTableName())
+			->where($qb->expr()->isNotNull('removed_at'))
+			->andWhere($qb->expr()->lt('removed_at', $qb->createNamedParameter($before, IQueryBuilder::PARAM_INT)));
 		return $qb->executeStatement();
 	}
 

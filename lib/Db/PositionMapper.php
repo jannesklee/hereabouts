@@ -40,6 +40,17 @@ class PositionMapper extends QBMapper {
 		return $this->findEntities($qb);
 	}
 
+	/**
+	 * Positions not updated since $before. They're already hidden everywhere
+	 * (Application::INACTIVE_AFTER); this just doesn't keep them around.
+	 */
+	public function deleteOlderThan(int $before): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete($this->getTableName())
+			->where($qb->expr()->lt('updated_at', $qb->createNamedParameter($before, IQueryBuilder::PARAM_INT)));
+		return $qb->executeStatement();
+	}
+
 	public function upsert(Position $position): void {
 		try {
 			$existing = $this->findByUserId($position->getUserId());

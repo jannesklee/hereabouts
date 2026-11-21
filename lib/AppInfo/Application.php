@@ -12,6 +12,17 @@ class Application extends App implements IBootstrap {
 
 	public const APP_ID = 'hereabouts';
 
+	/**
+	 * Seconds without a position update after which someone counts as no
+	 * longer sharing: guests drop out of the group, members stay in it but
+	 * their position is hidden (groups and share links alike). Both the web
+	 * pages and the companion app send at least every 30s while sharing.
+	 */
+	public const INACTIVE_AFTER = 15 * 60;
+
+	/** How long a guest the owner removed stays blocked from silently rejoining. */
+	public const REMOVED_GUEST_KEEP = 24 * 3600;
+
 	public function __construct(array $urlParams = []) {
 		parent::__construct(self::APP_ID, $urlParams);
 	}

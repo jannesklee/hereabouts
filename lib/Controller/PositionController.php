@@ -58,6 +58,11 @@ class PositionController extends Controller {
 	 * Guest (unauthenticated) updates their position using the group invite token.
 	 * The name param identifies the guest within the group.
 	 * Optional duration param (in minutes) sets when the guest expires.
+	 *
+	 * If the group owner removed this guest, updates get 403 "removed" so the
+	 * guest's page stops. rejoin=1 (sent with the first update after the guest
+	 * deliberately starts sharing again) lifts that, like a removed member can
+	 * accept the invite again.
 	 */
 	#[PublicPage]
 	#[NoAdminRequired]
@@ -69,6 +74,7 @@ class PositionController extends Controller {
 		?float $speed = null, ?float $bearing = null,
 		?int $duration = null,
 		bool $stop = false,
+		bool $rejoin = false,
 	): DataResponse {
 		try {
 			$group = $this->groupMapper->findByToken($token);
@@ -77,6 +83,19 @@ class PositionController extends Controller {
 		}
 
 		$cleanName = mb_substr(trim($name), 0, 64);
+
+		try {
+			$existing = $this->guestMapper->findByGroupAndName($group->getId(), $cleanName);
+		} catch (DoesNotExistException $e) {
+			$existing = null;
+		}
+		if ($existing !== null && $existing->getRemovedAt() !== null) {
+			if ($stop || !$rejoin) {
+				return new DataResponse(['error' => 'removed'], Http::STATUS_FORBIDDEN);
+			}
+			// Starts over as a new guest below
+			$this->guestMapper->delete($existing);
+		}
 
 		if ($stop) {
 			$this->guestMapper->deleteByGroupAndName($group->getId(), $cleanName);

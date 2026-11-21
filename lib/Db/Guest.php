@@ -27,6 +27,8 @@ use OCP\DB\Types;
  * @method void setUpdatedAt(?int $updatedAt)
  * @method int|null getExpiresAt()
  * @method void setExpiresAt(?int $expiresAt)
+ * @method int|null getRemovedAt()
+ * @method void setRemovedAt(?int $removedAt)
  */
 class Guest extends Entity {
 
@@ -40,6 +42,8 @@ class Guest extends Entity {
 	protected $bearing;
 	protected $updatedAt;
 	protected $expiresAt;
+	// Set when the group owner removed this guest (see GuestMapper)
+	protected $removedAt;
 
 	public function __construct() {
 		$this->addType('groupId', Types::INTEGER);
@@ -52,5 +56,6 @@ class Guest extends Entity {
 		$this->addType('bearing', Types::FLOAT);
 		$this->addType('updatedAt', Types::INTEGER);
 		$this->addType('expiresAt', Types::INTEGER);
+		$this->addType('removedAt', Types::INTEGER);
 	}
 }
