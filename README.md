@@ -69,6 +69,10 @@ npx expo run:android   # or run:ios
 
 See `docs/dev-notes.md` for the Android dev environment setup (emulator, Metro, common gotchas) and `docs/manual-testing.md` for the manual test workflow.
 
+## AI assistance
+
+Developed with AI assistance.
+
 ## License
 
 [AGPL-3.0](LICENSE) — the same license used by Nextcloud itself. Covers the whole repository, including the companion app.
