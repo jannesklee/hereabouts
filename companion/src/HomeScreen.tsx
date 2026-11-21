@@ -6,6 +6,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  Share as ShareSheet,
   StyleSheet,
   Switch,
   Text,
@@ -16,7 +17,6 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import * as Clipboard from 'expo-clipboard';
 import { type AppConfig, type GuestLink, normalizeUrl, parseInviteUrl, saveConfig } from './config';
 import {
   fetchGroups,
@@ -81,14 +81,12 @@ export default function HomeScreen({
   const [openGuestToken, setOpenGuestToken] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
-  const [copiedGroupId, setCopiedGroupId] = useState<number | null>(null);
   const [joinInviteUrl, setJoinInviteUrl] = useState('');
   const [joiningGroup, setJoiningGroup] = useState(false);
   const [nicknames, setNicknames] = useState<Nicknames>({});
   const [shares, setShares] = useState<Share[]>([]);
   const [shareMinutes, setShareMinutes] = useState(60);
   const [creatingShare, setCreatingShare] = useState(false);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
   const [newGuestUrl, setNewGuestUrl] = useState('');
   const [newGuestName, setNewGuestName] = useState('');
   const [newGuestDuration, setNewGuestDuration] = useState(60);
@@ -384,10 +382,13 @@ export default function HomeScreen({
     );
   }
 
-  async function handleCopyGroupInvite(group: GroupWithMembers) {
-    await Clipboard.setStringAsync(group.inviteUrl);
-    setCopiedGroupId(group.id);
-    setTimeout(() => setCopiedGroupId(null), 2000);
+  // Android's share menu: chat apps, and "Copy" for anything else. Only the
+  // link is sent; chat apps show its preview (PageController::addLinkPreview).
+  function handleInvite(group: GroupWithMembers) {
+    ShareSheet.share(
+      { message: group.inviteUrl },
+      { dialogTitle: `Invite people to "${displayName(group)}"` },
+    ).catch((e) => console.error('[Hereabouts] invite share failed:', e));
   }
 
   async function handleToggleGroupVisibility(group: GroupWithMembers) {
@@ -509,24 +510,35 @@ export default function HomeScreen({
     setCreatingShare(false);
     if (!share) return;
     setShares((prev) => [share, ...prev]);
-    await Clipboard.setStringAsync(share.url);
-    setCopiedId(share.id);
-    setTimeout(() => setCopiedId(null), 2000);
+    handleShareLink(share);
   }
 
-  async function handleCopy(share: Share) {
-    await Clipboard.setStringAsync(share.url);
-    setCopiedId(share.id);
-    setTimeout(() => setCopiedId(null), 2000);
+  function handleShareLink(share: Share) {
+    ShareSheet.share(
+      { message: share.url },
+      { dialogTitle: 'Share your location' },
+    ).catch((e) => console.error('[Hereabouts] link share failed:', e));
   }
 
-  async function handleRevoke(share: Share) {
-    const ok = await revokeShare(config, share.id);
-    if (ok) {
-      const updated = shares.filter((s) => s.id !== share.id);
-      setShares(updated);
-      maybeStopSharing(groups, updated);
-    }
+  function handleRevoke(share: Share) {
+    Alert.alert(
+      'Stop this link?',
+      'Anyone who has the link can no longer see where you are.',
+      [
+        {
+          text: 'Stop',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await revokeShare(config, share.id);
+            if (!ok) return;
+            const updated = shares.filter((s) => s.id !== share.id);
+            setShares(updated);
+            maybeStopSharing(groups, updated);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   }
 
   const openGroup = groups.find((g) => g.id === openGroupId) ?? null;
@@ -543,8 +555,7 @@ export default function HomeScreen({
           <GroupSettings
             group={openGroup}
             nickname={nicknames[openGroup.id] ?? ''}
-            copied={copiedGroupId === openGroup.id}
-            onCopyInvite={() => handleCopyGroupInvite(openGroup)}
+            onInvite={() => handleInvite(openGroup)}
             onToggleSharing={() => handleToggleGroupVisibility(openGroup)}
             onRemoveMember={(userId) => handleRemoveMember(openGroup, userId)}
             onDeleteGroup={() => handleDeleteGroup(openGroup)}
@@ -760,8 +771,7 @@ export default function HomeScreen({
                   <ShareRow
                     key={share.id}
                     share={share}
-                    copied={copiedId === share.id}
-                    onCopy={() => handleCopy(share)}
+                    onShare={() => handleShareLink(share)}
                     onRevoke={() => handleRevoke(share)}
                   />
                 ))}
@@ -806,6 +816,7 @@ export default function HomeScreen({
                 shareValue={group.visible}
                 onShareChange={() => handleToggleGroupVisibility(group)}
                 onOpen={() => setOpenGroupId(group.id)}
+                onInvite={() => handleInvite(group)}
                 bordered={i > 0}
               />
             ))}
@@ -872,8 +883,7 @@ export default function HomeScreen({
 function GroupSettings({
   group,
   nickname,
-  copied,
-  onCopyInvite,
+  onInvite,
   onToggleSharing,
   onRemoveMember,
   onDeleteGroup,
@@ -882,8 +892,7 @@ function GroupSettings({
 }: {
   group: GroupWithMembers;
   nickname: string;
-  copied: boolean;
-  onCopyInvite: () => void;
+  onInvite: () => void;
   onToggleSharing: () => void;
   onRemoveMember: (userId: string) => void;
   onDeleteGroup: () => void;
@@ -937,8 +946,8 @@ function GroupSettings({
             {group.inviteUrl}
           </Text>
         </View>
-        <TouchableOpacity style={styles.iconBtn} onPress={onCopyInvite} accessibilityLabel="Copy invite link">
-          <Text style={styles.iconText}>{copied ? '✓' : '📋'}</Text>
+        <TouchableOpacity style={styles.iconBtn} onPress={onInvite} accessibilityLabel="Send invite link">
+          <MaterialIcons name="share" size={22} color={PRIMARY} />
         </TouchableOpacity>
       </View>
 
@@ -1013,6 +1022,7 @@ function GroupRow({
   shareValue,
   onShareChange,
   onOpen,
+  onInvite,
   onLeave,
   bordered,
 }: {
@@ -1022,32 +1032,51 @@ function GroupRow({
   shareValue: boolean;
   onShareChange: () => void;
   onOpen: () => void;
+  onInvite?: () => void;
   onLeave?: () => void;
   bordered: boolean;
 }) {
   return (
     <View style={[styles.groupBlock, bordered && styles.groupBlockBorder]}>
-      <Pressable
-        onPress={onOpen}
-        android_ripple={{ color: '#dbeafe' }}
-        style={({ pressed }) => [styles.groupMain, pressed && styles.groupMainPressed]}
-        accessibilityRole="button"
-        accessibilityLabel={`Open the map of ${title}`}
-      >
-        <AvatarStack members={members ?? []} />
-        <View style={styles.groupText}>
-          <Text style={styles.groupName} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={styles.groupStatus} numberOfLines={1}>
-            {groupStatus(members)}
-          </Text>
-        </View>
-        <View style={styles.mapPill}>
-          <MaterialIcons name="map" size={16} color={PRIMARY} />
-          <Text style={styles.mapPillText}>Map</Text>
-        </View>
-      </Pressable>
+      {/* The invite button sits outside the Pressable: TalkBack treats a
+          Pressable as one element, so a button inside it couldn't be reached. */}
+      <View style={styles.groupTop}>
+        <Pressable
+          onPress={onOpen}
+          android_ripple={{ color: '#dbeafe' }}
+          style={({ pressed }) => [
+            styles.groupMain,
+            onInvite && styles.groupMainWithInvite,
+            pressed && styles.groupMainPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`Open the map of ${title}`}
+        >
+          <AvatarStack members={members ?? []} />
+          <View style={styles.groupText}>
+            <Text style={styles.groupName} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.groupStatus} numberOfLines={1}>
+              {groupStatus(members)}
+            </Text>
+          </View>
+          <View style={styles.mapPill}>
+            <MaterialIcons name="map" size={16} color={PRIMARY} />
+            <Text style={styles.mapPillText}>Map</Text>
+          </View>
+        </Pressable>
+        {onInvite && (
+          <TouchableOpacity
+            style={styles.invitePill}
+            onPress={onInvite}
+            accessibilityRole="button"
+            accessibilityLabel={`Invite people to ${title}`}
+          >
+            <MaterialIcons name="person-add-alt" size={18} color={PRIMARY} />
+          </TouchableOpacity>
+        )}
+      </View>
       <View style={styles.groupShareRow}>
         <Text style={styles.groupShareLabel} numberOfLines={1}>
           {shareLabel}
@@ -1064,7 +1093,7 @@ function GroupRow({
             onPress={onLeave}
             accessibilityLabel={`Leave ${title}`}
           >
-            <Text style={styles.memberRemoveText}>✕</Text>
+            <MaterialIcons name="close" size={20} color={DANGER} />
           </TouchableOpacity>
         )}
       </View>
@@ -1130,13 +1159,11 @@ function groupStatus(members: Member[] | null): string {
 
 function ShareRow({
   share,
-  copied,
-  onCopy,
+  onShare,
   onRevoke,
 }: {
   share: Share;
-  copied: boolean;
-  onCopy: () => void;
+  onShare: () => void;
   onRevoke: () => void;
 }) {
   return (
@@ -1147,11 +1174,11 @@ function ShareRow({
         </Text>
         <Text style={styles.shareExpiry}>{formatExpiry(share.expiresAt)}</Text>
       </View>
-      <TouchableOpacity style={styles.iconBtn} onPress={onCopy}>
-        <Text style={styles.iconText}>{copied ? '✓' : '📋'}</Text>
+      <TouchableOpacity style={styles.iconBtn} onPress={onShare} accessibilityLabel="Send link">
+        <MaterialIcons name="share" size={22} color={PRIMARY} />
       </TouchableOpacity>
-      <TouchableOpacity style={styles.iconBtn} onPress={onRevoke}>
-        <Text style={styles.iconText}>🗑</Text>
+      <TouchableOpacity style={styles.iconBtn} onPress={onRevoke} accessibilityLabel="Stop this link">
+        <MaterialIcons name="close" size={22} color={DANGER} />
       </TouchableOpacity>
     </View>
   );
@@ -1205,6 +1232,7 @@ function MemberRow({
       {onRemove && (
         <TouchableOpacity
           style={styles.memberRemoveBtn}
+          accessibilityLabel={`Remove ${member.displayName}`}
           onPress={() =>
             Alert.alert(
               'Remove member',
@@ -1216,7 +1244,7 @@ function MemberRow({
             )
           }
         >
-          <Text style={styles.memberRemoveText}>✕</Text>
+          <MaterialIcons name="close" size={20} color={DANGER} />
         </TouchableOpacity>
       )}
     </TouchableOpacity>
@@ -1238,6 +1266,8 @@ function formatExpiry(expiresAt: number | null): string {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const PRIMARY = '#0082c9';
+// Removing people, stopping links, leaving and deleting groups
+const DANGER = '#dc2626';
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#f0f4f8' },
@@ -1297,6 +1327,7 @@ const styles = StyleSheet.create({
   groupBlock: { paddingVertical: 6 },
   groupBlockBorder: { borderTopWidth: 1, borderTopColor: '#f0f0f0' },
   groupMain: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -1307,6 +1338,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   groupMainPressed: { backgroundColor: '#eff6ff' },
+  groupTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // No negative margin on the right, or the press highlight would run under
+  // the invite button
+  groupMainWithInvite: { marginRight: 0 },
+  invitePill: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e6f3fa',
+  },
   groupText: { flex: 1, minWidth: 0 },
   groupName: { fontSize: 15, fontWeight: '600', color: '#111' },
   groupStatus: { fontSize: 12, color: '#6b7280', marginTop: 2 },
@@ -1432,7 +1475,6 @@ const styles = StyleSheet.create({
   shareUrl: { fontSize: 13, color: PRIMARY, fontWeight: '500' },
   shareExpiry: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
   iconBtn: { padding: 8 },
-  iconText: { fontSize: 18 },
 
   memberRow: {
     flexDirection: 'row',
@@ -1459,7 +1501,6 @@ const styles = StyleSheet.create({
   memberSeen: { fontSize: 12, color: '#9ca3af', marginTop: 1 },
   memberDot: { width: 8, height: 8, borderRadius: 4 },
   memberRemoveBtn: { paddingLeft: 10, paddingVertical: 4 },
-  memberRemoveText: { fontSize: 15, color: '#c1c7cf', fontWeight: '700' },
 
   deleteGroupBtn: { alignItems: 'center', marginTop: 16, paddingVertical: 6 },
   deleteGroupBtnText: { fontSize: 13, fontWeight: '600', color: '#dc2626' },

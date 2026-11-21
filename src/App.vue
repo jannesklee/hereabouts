@@ -46,10 +46,11 @@
 								</NcButton>
 								<NcButton
 									variant="tertiary"
-									aria-label="Revoke link"
+									aria-label="Stop this link"
+									title="Stop this link"
 									@click="revokeShare(share.id)">
 									<template #icon>
-										<DeleteIcon :size="18" />
+										<CloseIcon :size="18" class="ls-danger-icon" />
 									</template>
 								</NcButton>
 							</div>
@@ -74,6 +75,17 @@
 							@click="openGroupId = group.id">
 							{{ group.name }} <span class="ls-chevron">›</span>
 						</button>
+						<NcButton
+							variant="tertiary"
+							class="ls-group-invite-btn"
+							:aria-label="copiedGroupId === group.id ? 'Invite link copied' : 'Copy invite link for ' + group.name"
+							:title="copiedGroupId === group.id ? 'Invite link copied' : 'Copy invite link'"
+							@click="copyGroupInvite(group)">
+							<template #icon>
+								<CheckIcon v-if="copiedGroupId === group.id" :size="18" />
+								<AccountPlusOutlineIcon v-else :size="18" />
+							</template>
+						</NcButton>
 						<label class="ls-group-visible">
 							<input
 								type="checkbox"
@@ -134,7 +146,7 @@
 				<template v-if="openGroup" #actions>
 					<NcButton variant="tertiary" aria-label="Group settings" @click="settingsOpen = true">
 						<template #icon>
-							<CogIcon :size="20" />
+							<DotsVerticalIcon :size="20" />
 						</template>
 					</NcButton>
 				</template>
@@ -206,7 +218,7 @@
 								:title="'Remove ' + member.displayName"
 								@click="removeGroupMember(openGroup, member)">
 								<template #icon>
-									<DeleteIcon :size="16" />
+									<CloseIcon :size="18" class="ls-danger-icon" />
 								</template>
 							</NcButton>
 						</li>
@@ -243,11 +255,12 @@ import {
 	NcCheckboxRadioSwitch,
 	NcModal,
 } from '@nextcloud/vue'
+import AccountPlusOutlineIcon from 'vue-material-design-icons/AccountPlusOutline.vue'
 import ArrowLeftIcon from 'vue-material-design-icons/ArrowLeft.vue'
 import CheckIcon from 'vue-material-design-icons/Check.vue'
-import CogIcon from 'vue-material-design-icons/Cog.vue'
+import CloseIcon from 'vue-material-design-icons/Close.vue'
 import ContentCopyIcon from 'vue-material-design-icons/ContentCopy.vue'
-import DeleteIcon from 'vue-material-design-icons/Delete.vue'
+import DotsVerticalIcon from 'vue-material-design-icons/DotsVertical.vue'
 import LiveMap from './components/LiveMap.vue'
 import { isStale } from './utils/stale.js'
 
@@ -261,11 +274,12 @@ export default {
 		NcButton,
 		NcCheckboxRadioSwitch,
 		NcModal,
+		AccountPlusOutlineIcon,
 		ArrowLeftIcon,
 		CheckIcon,
-		CogIcon,
+		CloseIcon,
 		ContentCopyIcon,
-		DeleteIcon,
+		DotsVerticalIcon,
 		LiveMap,
 	},
 
@@ -583,6 +597,7 @@ export default {
 		},
 
 		async revokeShare(id) {
+			if (!confirm('Stop this link? Anyone who has it can no longer see where you are.')) return
 			try {
 				await axios.post(generateUrl('/apps/hereabouts/share/' + id + '/revoke'))
 				this.shares = this.shares.filter((s) => s.id !== id)
@@ -784,6 +799,20 @@ export default {
 
 .ls-chevron {
 	color: var(--color-text-maxcontrast, #767676);
+}
+
+/* Name takes the free space, so the invite button sits next to "Visible here" */
+.ls-group-overview-row .ls-group-name-link {
+	flex: 1;
+}
+
+.ls-group-invite-btn {
+	flex-shrink: 0;
+}
+
+/* Removing people and stopping links */
+.ls-danger-icon {
+	color: var(--color-error, #dc2626);
 }
 
 .ls-group-name-link--active {

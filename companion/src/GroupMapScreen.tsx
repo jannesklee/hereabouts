@@ -120,7 +120,7 @@ export default function GroupMapScreen({ title, members, loaded, onBack, setting
             onPress={() => setSettingsOpen(true)}
             accessibilityLabel="Group settings"
           >
-            <MaterialIcons name="settings" size={22} color="#374151" />
+            <MaterialIcons name="more-vert" size={24} color="#374151" />
           </TouchableOpacity>
         )}
       </View>
