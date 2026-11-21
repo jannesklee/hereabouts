@@ -22,6 +22,7 @@ return [
 		['name' => 'group#guestPositions', 'url' => '/guest/{token}/positions', 'verb' => 'GET'],
 		['name' => 'group#setVisibility', 'url' => '/group/{id}/visibility', 'verb' => 'POST'],
 		['name' => 'group#removeMember',  'url' => '/group/{id}/members/{userId}/remove', 'verb' => 'POST'],
+		['name' => 'group#leave',         'url' => '/group/{id}/leave',                   'verb' => 'POST'],
 		['name' => 'group#delete',        'url' => '/group/{id}/delete',                  'verb' => 'POST'],
 
 		// Position updates

@@ -29,6 +29,7 @@ import {
   setGroupVisibility,
   removeGroupMember,
   deleteGroup,
+  leaveGroup,
   createShare,
   revokeShare,
   stopGuestLink,
@@ -475,6 +476,31 @@ export default function HomeScreen({
     );
   }
 
+  async function handleLeaveGroup(group: GroupWithMembers) {
+    Alert.alert(
+      'Leave group',
+      `Leave "${group.name}"? You won't see the others anymore, and they won't see you. You can join again with the invite link.`,
+      [
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await leaveGroup(config, group.id);
+            if (!ok) {
+              Alert.alert('Could not leave the group', 'Check your connection and try again.');
+              return;
+            }
+            const updated = groups.filter((g) => g.id !== group.id);
+            setGroups(updated);
+            setOpenGroupId(null);
+            maybeStopSharing(updated, shares);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }
+
   async function handleCreateShare() {
     const ok = await ensureSharing();
     if (!ok) return;
@@ -522,6 +548,7 @@ export default function HomeScreen({
             onToggleSharing={() => handleToggleGroupVisibility(openGroup)}
             onRemoveMember={(userId) => handleRemoveMember(openGroup, userId)}
             onDeleteGroup={() => handleDeleteGroup(openGroup)}
+            onLeaveGroup={() => handleLeaveGroup(openGroup)}
             onSetNickname={(value) => handleSetNickname(openGroup.id, value)}
           />
         }
@@ -850,6 +877,7 @@ function GroupSettings({
   onToggleSharing,
   onRemoveMember,
   onDeleteGroup,
+  onLeaveGroup,
   onSetNickname,
 }: {
   group: GroupWithMembers;
@@ -859,6 +887,7 @@ function GroupSettings({
   onToggleSharing: () => void;
   onRemoveMember: (userId: string) => void;
   onDeleteGroup: () => void;
+  onLeaveGroup: () => void;
   onSetNickname: (value: string) => void;
 }) {
   const [nicknameDraft, setNicknameDraft] = useState(nickname);
@@ -922,9 +951,13 @@ function GroupSettings({
         />
       ))}
 
-      {group.isOwner && (
+      {group.isOwner ? (
         <TouchableOpacity style={styles.deleteGroupBtn} onPress={onDeleteGroup}>
           <Text style={styles.deleteGroupBtnText}>Delete group</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity style={styles.deleteGroupBtn} onPress={onLeaveGroup}>
+          <Text style={styles.deleteGroupBtnText}>Leave group</Text>
         </TouchableOpacity>
       )}
     </View>

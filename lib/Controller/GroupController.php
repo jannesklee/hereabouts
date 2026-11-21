@@ -171,6 +171,30 @@ class GroupController extends Controller {
 	}
 
 	/**
+	 * The current user leaves a group they're a member of. Not the owner:
+	 * nobody else could manage the group, so they delete it instead. Like a
+	 * removed member, they can come back through the invite link.
+	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	public function leave(int $id): DataResponse {
+		try {
+			$group = $this->groupMapper->find($id);
+		} catch (DoesNotExistException $e) {
+			return new DataResponse(['error' => 'not_found'], Http::STATUS_NOT_FOUND);
+		}
+
+		if ($group->getOwnerUserId() === $this->userId) {
+			return new DataResponse(['error' => 'owner_cannot_leave'], Http::STATUS_BAD_REQUEST);
+		}
+
+		// Not a member (anymore) is fine: the result is the same
+		$this->groupMemberMapper->deleteByGroupAndUser($id, $this->userId);
+
+		return new DataResponse([]);
+	}
+
+	/**
 	 * Deletes a group the current user owns, along with its memberships
 	 * and any guest entries. Doesn't touch any share links (they aren't
 	 * group-scoped).

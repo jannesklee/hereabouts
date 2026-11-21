@@ -286,6 +286,24 @@ export async function deleteGroup(
   }
 }
 
+/** Leaves a group the user doesn't own (the owner deletes it instead). */
+export async function leaveGroup(
+  config: AppConfig,
+  groupId: number,
+): Promise<boolean> {
+  try {
+    const res = await fetch(
+      url(config, `/group/${groupId}/leave`),
+      { method: 'POST', headers: headers(config) },
+    );
+    if (!res.ok) console.error('[Hereabouts] leaveGroup failed:', res.status);
+    return res.ok;
+  } catch (e) {
+    console.error('[Hereabouts] leaveGroup error:', e);
+    return false;
+  }
+}
+
 export async function fetchMembers(
   config: AppConfig,
   groupId: number,

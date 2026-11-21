@@ -218,6 +218,12 @@
 						@click="deleteGroup(openGroup)">
 						Delete group
 					</button>
+					<button
+						v-else
+						class="ls-delete-group-btn"
+						@click="leaveGroup(openGroup)">
+						Leave group
+					</button>
 				</div>
 			</NcModal>
 		</NcAppContent>
@@ -471,6 +477,19 @@ export default {
 				group.members = group.members.filter((m) => m.userId !== member.userId)
 			} catch (e) {
 				console.error('Failed to remove group member', e)
+			}
+		},
+
+		// Members who don't own the group; the owner deletes it instead.
+		async leaveGroup(group) {
+			if (!confirm(`Leave "${group.name}"? You won't see the others anymore, and they won't see you. You can join again with the invite link.`)) return
+			try {
+				await axios.post(generateUrl('/apps/hereabouts/group/' + group.id + '/leave'))
+				this.groups = this.groups.filter((g) => g.id !== group.id)
+				this.openGroupId = null
+			} catch (e) {
+				console.error('Failed to leave group', e)
+				alert('Could not leave the group. Check your connection and try again.')
 			}
 		},
 
