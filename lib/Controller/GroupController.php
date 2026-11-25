@@ -309,7 +309,14 @@ class GroupController extends Controller {
 	 * Same as positions(), but for an unauthenticated guest identified by the
 	 * group's invite token instead of a Nextcloud session - the token is the
 	 * same trust boundary already used by PositionController::guestUpdate().
-	 * The name param (if it matches an active guest) marks that entry as "me".
+	 *
+	 * Guests only see the others while they share themselves, i.e. while
+	 * $name is a guest the group currently lists. Otherwise someone with the
+	 * invite link could watch without showing up anywhere: a removed guest,
+	 * a guest who switched sharing off, or someone who never joined. They get
+	 * 403 "removed" (the owner removed them) or "not_sharing". Members with an
+	 * account always appear in the member list, so positions() doesn't need
+	 * this.
 	 */
 	#[PublicPage]
 	#[NoAdminRequired]
@@ -322,6 +329,20 @@ class GroupController extends Controller {
 		}
 
 		$cleanName = mb_substr(trim($name), 0, 64);
+		try {
+			$guest = $cleanName === ''
+				? null
+				: $this->guestMapper->findByGroupAndName($group->getId(), $cleanName);
+		} catch (DoesNotExistException $e) {
+			$guest = null;
+		}
+		if ($guest !== null && $guest->getRemovedAt() !== null) {
+			return new DataResponse(['error' => 'removed'], Http::STATUS_FORBIDDEN);
+		}
+		$now = time();
+		if ($guest === null || !$guest->isActive($now - Application::INACTIVE_AFTER, $now)) {
+			return new DataResponse(['error' => 'not_sharing'], Http::STATUS_FORBIDDEN);
+		}
 
 		return new DataResponse($this->buildPositions($group->getId(), null, $cleanName));
 	}

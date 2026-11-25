@@ -98,8 +98,9 @@ export default function HomeScreen({
   const [newGuestName, setNewGuestName] = useState('');
   const [newGuestDuration, setNewGuestDuration] = useState(60);
   const [joiningGuestLink, setJoiningGuestLink] = useState(false);
-  // Guest mode: who is in each joined group, for the status line in the list.
-  const [guestMembers, setGuestMembers] = useState<Record<string, Member[]>>({});
+  // Guest mode: who is in each joined group, for the status line in the list,
+  // or 'not_sharing' while the server doesn't show this guest the others.
+  const [guestMembers, setGuestMembers] = useState<Record<string, Member[] | 'not_sharing'>>({});
   // Group to open once the group list has it (after joining from an invite)
   const [openWhenLoadedToken, setOpenWhenLoadedToken] = useState<string | null>(null);
   const guestNameInputRef = useRef<TextInput>(null);
@@ -243,18 +244,29 @@ export default function HomeScreen({
   );
 
   const guestLinksKey = config.guestLinks
-    .map((l) => `${l.server}|${l.token}|${l.name}|${l.ended ?? ''}`)
+    .map((l) => `${l.server}|${l.token}|${l.name}|${l.enabled}|${l.ended ?? ''}`)
     .join(',');
   useEffect(() => {
     if (config.mode !== 'guest') return;
     let cancelled = false;
+    // Guests only see the others while they share there, so links with the
+    // switch off aren't asked (their row says to turn it on).
     async function loadGuestMembers() {
       const entries = await Promise.all(
         config.guestLinks
-          .filter((l) => !l.ended)
+          .filter((l) => l.enabled && !l.ended)
           .map(async (l) => [l.token, await fetchGuestPositions(l)] as const),
       );
-      if (!cancelled) setGuestMembers(Object.fromEntries(entries));
+      if (cancelled) return;
+      // A failed request keeps what the row showed before
+      setGuestMembers((prev) => {
+        const next: Record<string, Member[] | 'not_sharing'> = {};
+        for (const [token, result] of entries) {
+          const value = result ?? prev[token];
+          if (value !== undefined) next[token] = value;
+        }
+        return next;
+      });
     }
     loadGuestMembers();
     const id = setInterval(loadGuestMembers, 15000);
@@ -690,26 +702,38 @@ export default function HomeScreen({
               <Text style={styles.emptyNote}>No groups yet</Text>
             )}
 
-            {config.guestLinks.map((link, i) => (
-              <GroupRow
-                key={link.token}
-                title={link.groupName || 'Unnamed group'}
-                members={link.ended ? [] : (guestMembers[link.token] ?? null)}
-                shareLabel={`Share my location as ${link.name}`}
-                shareValue={link.enabled}
-                onShareChange={() => handleToggleGuestLink(link)}
-                onOpen={() => setOpenGuestToken(link.token)}
-                onLeave={() => handleRemoveGuestLink(link)}
-                endedNote={
-                  link.ended === 'removed'
-                    ? 'The group owner removed you'
-                    : link.ended === 'gone'
-                    ? 'This group was deleted'
-                    : undefined
-                }
-                bordered={i > 0}
-              />
-            ))}
+            {config.guestLinks.map((link, i) => {
+              const loaded = guestMembers[link.token];
+              // Guests only see the others while they share there
+              const lockedNote = link.ended
+                ? undefined
+                : !link.enabled
+                ? 'Turn on sharing to see the others'
+                : loaded === 'not_sharing'
+                ? 'Waiting for your location…'
+                : undefined;
+              return (
+                <GroupRow
+                  key={link.token}
+                  title={link.groupName || 'Unnamed group'}
+                  members={link.ended || lockedNote ? [] : Array.isArray(loaded) ? loaded : null}
+                  shareLabel={`Share my location as ${link.name}`}
+                  shareValue={link.enabled}
+                  onShareChange={() => handleToggleGuestLink(link)}
+                  onOpen={() => setOpenGuestToken(link.token)}
+                  onLeave={() => handleRemoveGuestLink(link)}
+                  endedNote={
+                    link.ended === 'removed'
+                      ? 'The group owner removed you'
+                      : link.ended === 'gone'
+                      ? 'This group was deleted'
+                      : undefined
+                  }
+                  lockedNote={lockedNote}
+                  bordered={i > 0}
+                />
+              );
+            })}
 
             <View style={[styles.newGroupRow, { marginTop: config.guestLinks.length ? 16 : 12 }]}>
               <TextInput
@@ -1032,15 +1056,25 @@ function GroupSettings({
 function GuestMapScreen({ link, onBack }: { link: GuestLink; onBack: () => void }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // The server shows the others only while it has a recent position from
+  // this guest: e.g. not yet after switching on, or after the phone had no
+  // location for 15 minutes.
+  const [waiting, setWaiting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function poll() {
       const data = await fetchGuestPositions(link);
-      if (!cancelled) {
+      if (cancelled) return;
+      if (data === 'not_sharing') {
+        setMembers([]);
+        setWaiting(true);
+      } else if (data !== null) {
         setMembers(data);
-        setLoaded(true);
+        setWaiting(false);
       }
+      // A failed request keeps the last map
+      setLoaded(true);
     }
     poll();
     const id = setInterval(poll, 10000);
@@ -1055,6 +1089,11 @@ function GuestMapScreen({ link, onBack }: { link: GuestLink; onBack: () => void 
       title={link.groupName || 'Unnamed group'}
       members={members}
       loaded={loaded}
+      notice={
+        waiting
+          ? "Waiting for your location. You'll see the others as soon as it has been sent."
+          : undefined
+      }
       onBack={onBack}
     />
   );
@@ -1076,6 +1115,7 @@ function GroupRow({
   onInvite,
   onLeave,
   endedNote,
+  lockedNote,
   bordered,
 }: {
   title: string;
@@ -1089,9 +1129,13 @@ function GroupRow({
   // Guest link the server ended ("The group owner removed you"): no map, no
   // switch, just the note and ✕ to take it off the list
   endedNote?: string;
+  // Guest link whose map can't be opened yet ("Turn on sharing to see the
+  // others"): the note replaces the member summary, the switch stays
+  lockedNote?: string;
   bordered: boolean;
 }) {
   const ended = endedNote !== undefined;
+  const noMap = ended || lockedNote !== undefined;
   return (
     <View style={[styles.groupBlock, bordered && styles.groupBlockBorder]}>
       {/* The invite button sits outside the Pressable: TalkBack treats a
@@ -1099,15 +1143,15 @@ function GroupRow({
       <View style={styles.groupTop}>
         <Pressable
           onPress={onOpen}
-          disabled={ended}
-          android_ripple={ended ? undefined : { color: '#dbeafe' }}
+          disabled={noMap}
+          android_ripple={noMap ? undefined : { color: '#dbeafe' }}
           style={({ pressed }) => [
             styles.groupMain,
             onInvite && styles.groupMainWithInvite,
             pressed && styles.groupMainPressed,
           ]}
-          accessibilityRole={ended ? undefined : 'button'}
-          accessibilityLabel={ended ? `${title}: ${endedNote}` : `Open the map of ${title}`}
+          accessibilityRole={noMap ? undefined : 'button'}
+          accessibilityLabel={noMap ? `${title}: ${endedNote ?? lockedNote}` : `Open the map of ${title}`}
         >
           <AvatarStack members={members ?? []} />
           <View style={styles.groupText}>
@@ -1115,10 +1159,10 @@ function GroupRow({
               {title}
             </Text>
             <Text style={[styles.groupStatus, ended && styles.groupStatusEnded]} numberOfLines={1}>
-              {ended ? endedNote : groupStatus(members)}
+              {endedNote ?? lockedNote ?? groupStatus(members)}
             </Text>
           </View>
-          {!ended && (
+          {!noMap && (
             <View style={styles.mapPill}>
               <MaterialIcons name="map" size={16} color={PRIMARY} />
               <Text style={styles.mapPillText}>Map</Text>

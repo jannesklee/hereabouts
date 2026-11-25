@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.5 – unreleased
+## 0.1.6 – unreleased
 
 ### Added
 - Link previews in chat apps (WhatsApp, Signal, Telegram, ...): group invites and share links each get their own title, text and image
@@ -9,6 +9,7 @@
 - Members can leave a group they don't own ("Leave group" in the group settings, web and companion app)
 
 ### Changed
+- Guests see the others on the map only while they share their own location there. Someone with the invite link can no longer watch without showing up in the group (for example a removed guest, or a guest who switched sharing off). The companion app says "Turn on sharing to see the others" for such a group. Members with an account are unchanged
 - Invite button for each group directly in the group list (web: copies the link; app: opens the Android share menu)
 - Companion app: share links and invites are sent with the Android share menu, which also offers "Copy"; a new share link opens it right away
 - Simpler, consistent icons: ✕ for removing people and stopping links (instead of a bin), three dots for a group's settings (instead of a gear); the app's emoji buttons are now regular icons

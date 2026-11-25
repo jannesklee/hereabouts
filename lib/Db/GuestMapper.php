@@ -21,6 +21,7 @@ class GuestMapper extends QBMapper {
 	 * Guests currently in the group: not expired, not removed by the owner,
 	 * and with a position update at or after $activeSince (someone who closed
 	 * the page without pressing Stop drops out once that's too long ago).
+	 * Guest::isActive() checks the same for one guest.
 	 *
 	 * @return Guest[]
 	 */

@@ -58,4 +58,15 @@ class Guest extends Entity {
 		$this->addType('expiresAt', Types::INTEGER);
 		$this->addType('removedAt', Types::INTEGER);
 	}
+
+	/**
+	 * Whether the group lists this guest right now, with a position. Same
+	 * rules as GuestMapper::findActiveByGroup(), keep the two in step.
+	 */
+	public function isActive(int $activeSince, int $now): bool {
+		return $this->removedAt === null
+			&& $this->lat !== null
+			&& $this->updatedAt !== null && $this->updatedAt >= $activeSince
+			&& ($this->expiresAt === null || $this->expiresAt > $now);
+	}
 }

@@ -161,25 +161,35 @@ export async function fetchGroupInfo(
   }
 }
 
+/**
+ * 'not_sharing': the server shows a guest the others only while it lists
+ * them as sharing (GroupController::guestPositions), i.e. the switch is on
+ * and a recent position of theirs arrived. A removed guest gets the same
+ * here; ending the link is the background task's job (locationTask.ts).
+ * null: the request failed, try again later.
+ */
+export type GuestPositions = Member[] | 'not_sharing' | null;
+
 // Same shape as fetchMembers(), but for guest mode - uses the group's
 // invite token as the auth boundary instead of a Nextcloud session. The
-// `name` param marks the caller's own entry as "me", mirroring
-// GroupController::guestPositions().
-export async function fetchGuestPositions(link: GuestLink): Promise<Member[]> {
+// `name` param says which guest is asking and marks their own entry as "me".
+export async function fetchGuestPositions(link: GuestLink): Promise<GuestPositions> {
   try {
     const params = new URLSearchParams({ name: link.name });
     const res = await fetch(
       appUrl(link.server, `/guest/${link.token}/positions?${params}`),
       { headers: guestHeaders },
     );
-    if (!res.ok) {
-      console.error('[Hereabouts] fetchGuestPositions failed:', res.status, await res.text());
-      return [];
+    if (res.ok) return (await res.json()) as Member[];
+    const data = await res.json().catch(() => null);
+    if (res.status === 403 && (data?.error === 'not_sharing' || data?.error === 'removed')) {
+      return 'not_sharing';
     }
-    return (await res.json()) as Member[];
+    console.error('[Hereabouts] fetchGuestPositions failed:', res.status, data);
+    return null;
   } catch (e) {
     console.error('[Hereabouts] fetchGuestPositions error:', e);
-    return [];
+    return null;
   }
 }
 

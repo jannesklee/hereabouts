@@ -259,6 +259,7 @@ import GuestLive from './GuestLive.vue'
 				name: currentName,
 				sharing: sharing,
 				onStop: function () { stopSharing(true) },
+				onRemoved: wasRemoved,
 			})
 			liveApp.mount(el)
 		}

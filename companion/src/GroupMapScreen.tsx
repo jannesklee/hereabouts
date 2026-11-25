@@ -30,12 +30,15 @@ interface Props {
   title: string;
   members: Member[];
   loaded: boolean;
+  // Shown instead of the map, e.g. while a guest's own location hasn't
+  // reached the server yet (it shows them the others only after that)
+  notice?: string;
   onBack: () => void;
   // Contents of the settings sheet. Without it there's no settings button.
   settings?: React.ReactNode;
 }
 
-export default function GroupMapScreen({ title, members, loaded, onBack, settings }: Props) {
+export default function GroupMapScreen({ title, members, loaded, notice, onBack, settings }: Props) {
   const insets = useSafeAreaInsets();
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
@@ -82,7 +85,11 @@ export default function GroupMapScreen({ title, members, loaded, onBack, setting
     <View style={styles.root}>
       <StatusBar style="dark" />
 
-      {loaded ? (
+      {loaded && notice ? (
+        <View style={styles.loading}>
+          <Text style={styles.notice}>{notice}</Text>
+        </View>
+      ) : loaded ? (
         <GroupMap
           members={members}
           focusedUserId={focusedUserId}
@@ -108,11 +115,13 @@ export default function GroupMapScreen({ title, members, loaded, onBack, setting
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {sharingCount === 0
-              ? 'Nobody sharing right now'
-              : `${sharingCount} of ${members.length} sharing`}
-          </Text>
+          {!notice && (
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {sharingCount === 0
+                ? 'Nobody sharing right now'
+                : `${sharingCount} of ${members.length} sharing`}
+            </Text>
+          )}
         </View>
         {settings && (
           <TouchableOpacity
@@ -173,7 +182,7 @@ export default function GroupMapScreen({ title, members, loaded, onBack, setting
               onPress={m.hasPosition ? () => toggleFocus(m.userId) : undefined}
             />
           ))}
-          {loaded && sorted.length === 0 && (
+          {loaded && !notice && sorted.length === 0 && (
             <Text style={styles.noMembers}>No one in this group yet</Text>
           )}
         </ScrollView>
@@ -252,6 +261,7 @@ const shadow = {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#e5e7eb' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  notice: { fontSize: 15, color: '#4b5563', textAlign: 'center', paddingHorizontal: 32 },
   statusScrim: {
     position: 'absolute',
     top: 0,
